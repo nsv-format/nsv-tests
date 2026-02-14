@@ -1,0 +1,2 @@
+# NSV fixtures are raw binary — prevent line-ending normalization
+fixtures/enum/*.nsv binary

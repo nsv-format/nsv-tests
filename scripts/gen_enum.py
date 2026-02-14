@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# ///
 """Generate enumerated NSV test fixtures.
 
 Produces every possible byte sequence over a 3-symbol alphabet
@@ -19,14 +22,7 @@ DIGITS = list(ALPHABET.keys())
 
 
 def expected_count(max_length: int) -> int:
-    """Total files: sum of 3^k for k in 0..max_length, which equals (3^(N+1) - 1) / 2 + 1 - 1 + 1.
-
-    More directly: 1 (empty) + 3 + 9 + 27 + ... + 3^max_length
-    = (3^(max_length+1) - 1) // 2
-    But the spec says (3^(N+1) - 1) / 2 + 1 which counts the empty
-    sequence separately. Let's just compute the geometric sum.
-    """
-    # sum of 3^k for k=0..max_length = (3^(max_length+1) - 1) / 2
+    """Geometric sum: 3^0 + 3^1 + ... + 3^max_length = (3^(max_length+1) - 1) // 2."""
     return (3 ** (max_length + 1) - 1) // 2
 
 
