@@ -15,8 +15,20 @@ trap 'rm -rf "$tmpdir"' EXIT
 uv run "$REPO_ROOT/scripts/gen_enum.py" --out-dir "$tmpdir/enum"
 
 if diff -r "$FIXTURES_DIR" "$tmpdir/enum"; then
-    echo "Fixtures are up to date."
+    echo "Enum fixtures are up to date."
 else
-    echo "Fixtures differ from fresh generation." >&2
+    echo "Enum fixtures differ from fresh generation." >&2
+    exit 1
+fi
+
+# --- Champernowne fixture ---
+CHAMPERNOWNE="$REPO_ROOT/fixtures/champernowne.nsv"
+
+uv run "$REPO_ROOT/scripts/gen_champernowne.py" --out "$tmpdir/champernowne.nsv"
+
+if diff "$CHAMPERNOWNE" "$tmpdir/champernowne.nsv"; then
+    echo "Champernowne fixture is up to date."
+else
+    echo "Champernowne fixture differs from fresh generation." >&2
     exit 1
 fi
