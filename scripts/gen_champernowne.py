@@ -23,6 +23,8 @@ ALPHABET = {
 }
 DIGITS = list(ALPHABET.keys())
 
+_BUF_SIZE = 1 << 20  # 1 MiB flush threshold
+
 
 def expected_byte_count(max_length: int) -> int:
     """Sum of k * 3^k for k in 0..max_length."""
@@ -36,16 +38,23 @@ def generate(max_length: int, out: Path) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     total_bytes = 0
+    buf = bytearray()
     with open(out, "wb") as f:
         for length in range(max_length + 1):
             if length == 0:
-                # Empty sequence contributes nothing
                 continue
 
             for combo in itertools.product(DIGITS, repeat=length):
-                for d in combo:
-                    f.write(ALPHABET[d])
-                total_bytes += length
+                buf.extend(b"".join(ALPHABET[d] for d in combo))
+                if len(buf) >= _BUF_SIZE:
+                    f.write(buf)
+                    total_bytes += len(buf)
+                    buf.clear()
+
+        if buf:
+            f.write(buf)
+            total_bytes += len(buf)
+            buf.clear()
 
     return total_bytes
 
