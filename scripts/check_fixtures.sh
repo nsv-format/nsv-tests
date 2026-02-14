@@ -32,3 +32,15 @@ else
     echo "Champernowne fixture differs from fresh generation." >&2
     exit 1
 fi
+
+# --- Valid encoding fixtures ---
+VALID_DIR="$REPO_ROOT/fixtures/valid"
+
+uv run "$REPO_ROOT/scripts/gen_valid.py" --out-dir "$tmpdir/valid"
+
+if diff -r "$VALID_DIR" "$tmpdir/valid"; then
+    echo "Valid encoding fixtures are up to date."
+else
+    echo "Valid encoding fixtures differ from fresh generation." >&2
+    exit 1
+fi
