@@ -55,8 +55,32 @@ non-empty cell, end cell before add 'a' before add escaped backslash
 before add escaped newline). DFS fully explores the first transition
 before the second, producing a deterministic canonical ordering.
 
-Files are named sequentially with uniform zero-padded indices:
-`000000.nsv`, `000001.nsv`, etc.
+### Filename encoding
+
+Each filename encodes the state-machine path that produced it. The
+initial S0 and the final S0 + accept are always implicit (every path
+starts and ends there), so the filename contains only the interior of
+the state sequence.
+
+State-changing transitions append the destination state digit (`0`, `1`,
+`2`). S2 self-loops append a content letter instead: `a` (add 'a'), `b`
+(add escaped backslash), `n` (add escaped newline). Each letter stands
+in for the S2 that would otherwise follow — so path length in
+characters equals the number of interior state visits.
+
+| Filename      | Path                             | Encoding   |
+|---------------|----------------------------------|------------|
+| `.nsv`        | S0 → accept                     | (empty)    |
+| `1.nsv`       | S0 → S1 → S0 → accept           | `0A`       |
+| `101.nsv`     | S0 → S1 → S0 → S1 → S0         | `0A 0A`    |
+| `11.nsv`      | S0 → S1 → S1 → S0              | `5C 0A 0A` |
+| `12a1.nsv`    | S0 → S1 → S2 → S2 → S1 → S0    | `61 0A 0A` |
+| `12abn1.nsv`  | S0 → S1 → S2(×4) → S1 → S0     | `61 5C 5C 5C 6E 0A 0A` |
+
+Reading a filename: digits are structural (row/cell boundaries), letters
+are cell content. `1` = entered S1 (row-level), `2` = entered S2 (cell),
+`0` = returned to S0 (row ended). Inside a cell, `a`/`b`/`n` are the
+content bytes written before the cell closes with the next `1`.
 
 ### Proof: NDFA traversal ↔ valid encodings
 

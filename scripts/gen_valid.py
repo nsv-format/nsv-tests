@@ -6,6 +6,16 @@
 
 DFS from S0 through all paths up to --max-transitions transitions.
 Each path reaching acceptance produces a unique .nsv fixture file.
+
+Filenames encode the state-machine path. State-changing transitions
+use the destination state digit (0/1/2). S2 self-loops use a content
+letter: a (add 'a'), b (escaped backslash), n (escaped newline).
+The initial S0 and final S0+accept are implicit, so the filename is
+the interior of the state sequence. Examples:
+
+  .nsv        S0 → accept                        (empty encoding)
+  1.nsv       S0 → S1 → S0 → accept              (one empty row)
+  12a1.nsv    S0 → S1 → S2 → S2 → S1 → S0       (row, cell with 'a')
 """
 
 import argparse
@@ -18,23 +28,26 @@ S1 = 1  # in-row
 S2 = 2  # in-cell
 
 # Transitions per state, in canonical DFS order.
-# Each entry: (next_state, emitted_bytes)
+# Each entry: (next_state, emitted_bytes, path_char)
 # next_state is None for the accept transition.
-TRANSITIONS: dict[int, list[tuple[int | None, bytes]]] = {
+# path_char encodes the transition in the filename:
+#   State-changing transitions use the destination state digit.
+#   S2 self-loops use a content letter: a, b, n.
+TRANSITIONS: dict[int, list[tuple[int | None, bytes, str]]] = {
     S0: [
-        (None, b""),            # accept
-        (S1, b""),              # start row
+        (None, b"", ""),            # accept
+        (S1, b"", "1"),             # start row
     ],
     S1: [
-        (S0, b"\x0a"),          # end row
-        (S1, b"\x5c\x0a"),      # start empty cell
-        (S2, b""),              # start non-empty cell
+        (S0, b"\x0a", "0"),         # end row
+        (S1, b"\x5c\x0a", "1"),     # start empty cell
+        (S2, b"", "2"),             # start non-empty cell
     ],
     S2: [
-        (S1, b"\x0a"),          # end cell
-        (S2, b"\x61"),          # add 'a'
-        (S2, b"\x5c\x5c"),     # add escaped backslash
-        (S2, b"\x5c\x6e"),     # add escaped newline
+        (S1, b"\x0a", "1"),         # end cell
+        (S2, b"\x61", "a"),         # add 'a'
+        (S2, b"\x5c\x5c", "b"),    # add escaped backslash
+        (S2, b"\x5c\x6e", "n"),    # add escaped newline
     ],
 }
 
@@ -44,40 +57,37 @@ def generate(max_transitions: int, out_dir: Path) -> int:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
 
-    encodings: list[bytes] = []
+    count = 0
 
-    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used)
-    stack: list[tuple[int, bytes, int]] = [(S0, b"", 0)]
+    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path)
+    stack: list[tuple[int, bytes, int, str]] = [(S0, b"", 0, "")]
 
     while stack:
-        state, acc, used = stack.pop()
+        state, acc, used, path = stack.pop()
 
         if used >= max_transitions:
             continue
 
-        children: list[tuple[int, bytes, int]] = []
+        children: list[tuple[int, bytes, int, str]] = []
 
-        for next_state, emitted in TRANSITIONS[state]:
+        for next_state, emitted, path_char in TRANSITIONS[state]:
             new_acc = acc + emitted if emitted else acc
             new_used = used + 1
 
             if next_state is None:
-                # Accept transition
-                encodings.append(new_acc)
+                # Accept transition — write file.
+                # Strip the trailing "0" (the S0 we accept from is implicit).
+                stem = path.removesuffix("0")
+                (out_dir / (stem + ".nsv")).write_bytes(new_acc)
+                count += 1
             elif new_used < max_transitions:
-                children.append((next_state, new_acc, new_used))
+                children.append((next_state, new_acc, new_used, path + path_char))
 
         # Push children in reverse order so first child is popped first (DFS)
         for child in reversed(children):
             stack.append(child)
 
-    # Write files with uniform zero-padded names (minimum 6 digits)
-    width = max(6, len(str(len(encodings) - 1))) if len(encodings) > 1 else 6
-    for i, data in enumerate(encodings):
-        name = f"{i:0{width}d}.nsv"
-        (out_dir / name).write_bytes(data)
-
-    return len(encodings)
+    return count
 
 
 def main() -> None:
