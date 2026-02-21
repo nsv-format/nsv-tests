@@ -70,8 +70,8 @@ characters equals the number of interior state visits.
 
 | Filename      | Path                             | Encoding   |
 |---------------|----------------------------------|------------|
-| `.nsv`        | S0 → accept                     | (empty)    |
-| `1.nsv`       | S0 → S1 → S0 → accept           | `0A`       |
+| `.nsv`        | (empty)                          | (empty)    |
+| `1.nsv`       | S0 → S1 → S0                    | `0A`       |
 | `101.nsv`     | S0 → S1 → S0 → S1 → S0         | `0A 0A`    |
 | `11.nsv`      | S0 → S1 → S1 → S0              | `5C 0A 0A` |
 | `12a1.nsv`    | S0 → S1 → S2 → S2 → S1 → S0    | `61 0A 0A` |

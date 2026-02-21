@@ -13,9 +13,9 @@ letter: a (add 'a'), b (escaped backslash), n (escaped newline).
 The initial S0 and final S0+accept are implicit, so the filename is
 the interior of the state sequence. Examples:
 
-  .nsv        S0 → accept                        (empty encoding)
-  1.nsv       S0 → S1 → S0 → accept              (one empty row)
-  12a1.nsv    S0 → S1 → S2 → S2 → S1 → S0       (row, cell with 'a')
+  .nsv        (empty)                              (empty encoding)
+  1.nsv       S0 → S1 → S0                        (one empty row)
+  12a1.nsv    S0 → S1 → S2 → S2 → S1 → S0        (row, cell with 'a')
 """
 
 import argparse
