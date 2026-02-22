@@ -1,0 +1,33 @@
+name: NSV Conformance
+description: >
+  Roundtrip-test an NSV implementation against canonical fixtures.
+  Verifies encode(decode(fixture)) == fixture for all valid encodings.
+
+inputs:
+  decode:
+    description: >
+      Shell command: reads NSV bytes from stdin, writes decoded
+      representation to stdout.  The output format is opaque — it only
+      needs to be understood by the corresponding encode command.
+    required: true
+  encode:
+    description: >
+      Shell command: reads the decode command's output format from stdin,
+      writes NSV bytes to stdout.
+    required: true
+  stress:
+    description: >
+      Run the 93 MB Champernowne stress test (default: false).
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Run conformance tests
+      shell: bash
+      run: ${{ github.action_path }}/scripts/conformance.sh
+      env:
+        NSV_DECODE: ${{ inputs.decode }}
+        NSV_ENCODE: ${{ inputs.encode }}
+        NSV_STRESS: ${{ inputs.stress }}
