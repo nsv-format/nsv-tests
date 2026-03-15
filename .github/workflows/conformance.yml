@@ -83,6 +83,7 @@ jobs:
       - name: Build roundtrip binary
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-rust.git /tmp/nsv-rust
+          mkdir -p /tmp/nsv-rust/examples
           cp .github/roundtrip/roundtrip.rs /tmp/nsv-rust/examples/
           cd /tmp/nsv-rust && cargo build --release --example roundtrip
       - name: Conformance
