@@ -20,7 +20,16 @@ jobs:
       - name: Conformance
         run: scripts/conformance.sh
         env:
-          NSV_ROUNDTRIP: python3 -c "import sys,nsv;sys.stdout.write(nsv.dumps(nsv.loads(sys.stdin.read())))"
+          NSV_ROUNDTRIP_DIR: >-
+            python3 -c "
+            import os,sys,nsv;d=sys.argv[1];
+            entries=sorted(e for e in os.listdir(d) if e.endswith('.nsv'));
+            fails=[];
+            [fails.append(n) if nsv.dumps(nsv.loads(open(os.path.join(d,n)).read()))!=open(os.path.join(d,n)).read() else None for n in entries];
+            passed=len(entries)-len(fails);
+            print(f'  {passed}/{len(entries)} passed');
+            [print(f'  {f}') for f in fails];
+            sys.exit(1 if fails else 0)"
 
   java:
     runs-on: ubuntu-latest
@@ -35,9 +44,25 @@ jobs:
           git clone --depth 1 https://github.com/nsv-format/nsv-java.git /tmp/nsv-java
           cat > /tmp/nsv-java/src/main/java/org/nsvformat/Roundtrip.java << 'JAVA'
           package org.nsvformat;
+          import java.nio.file.*;
+          import java.util.*;
           public class Roundtrip {
               public static void main(String[] args) throws Exception {
-                  System.out.print(Nsv.encode(Nsv.decode(new String(System.in.readAllBytes()))));
+                  Path dir = Paths.get(args[0]);
+                  int passed = 0, failed = 0;
+                  List<String> fails = new ArrayList<>();
+                  List<Path> files = Files.list(dir)
+                      .filter(p -> p.toString().endsWith(".nsv"))
+                      .sorted()
+                      .toList();
+                  for (Path p : files) {
+                      String orig = Files.readString(p);
+                      if (Nsv.encode(Nsv.decode(orig)).equals(orig)) passed++;
+                      else { failed++; fails.add(p.getFileName().toString()); }
+                  }
+                  System.out.printf("  %d/%d passed%n", passed, passed + failed);
+                  for (String f : fails) System.out.println("  " + f);
+                  if (failed > 0) System.exit(1);
               }
           }
           JAVA
@@ -45,7 +70,7 @@ jobs:
       - name: Conformance
         run: scripts/conformance.sh
         env:
-          NSV_ROUNDTRIP: java -cp /tmp/nsv-java/target/classes org.nsvformat.Roundtrip
+          NSV_ROUNDTRIP_DIR: java -cp /tmp/nsv-java/target/classes org.nsvformat.Roundtrip
 
   scala:
     runs-on: ubuntu-latest
@@ -59,10 +84,20 @@ jobs:
           git clone --depth 1 https://github.com/nsv-format/nsv-scala.git /tmp/nsv-scala
           cat > /tmp/nsv-scala/src/Roundtrip.scala << 'SCALA'
           package org.nsvformat
+          import java.nio.file.{Files, Paths}
           object Roundtrip:
             def main(args: Array[String]): Unit =
-              val input = new String(System.in.readAllBytes())
-              print(Nsv.encode(Nsv.decode(input)))
+              val dir = Paths.get(args(0))
+              var passed = 0; var failed = 0
+              val fails = collection.mutable.ArrayBuffer[String]()
+              Files.list(dir).sorted.forEach: p =>
+                if p.toString.endsWith(".nsv") then
+                  val orig = Files.readString(p)
+                  if Nsv.encode(Nsv.decode(orig)) == orig then passed += 1
+                  else { failed += 1; fails += p.getFileName.toString }
+              println(s"  $passed/${passed + failed} passed")
+              fails.foreach(f => println(s"  $f"))
+              if failed > 0 then System.exit(1)
           SCALA
           cd /tmp/nsv-scala && sbt -batch compile
           classes=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
@@ -72,7 +107,7 @@ jobs:
       - name: Conformance
         run: scripts/conformance.sh
         env:
-          NSV_ROUNDTRIP: /tmp/nsv-roundtrip
+          NSV_ROUNDTRIP_DIR: /tmp/nsv-roundtrip
 
   js:
     runs-on: ubuntu-latest
@@ -86,8 +121,17 @@ jobs:
       - name: Conformance
         run: scripts/conformance.sh
         env:
-          NSV_ROUNDTRIP: >-
-            node -e "const n=require('/tmp/nsv-js/index.js');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(n.stringify(n.parse(d))))"
+          NSV_ROUNDTRIP_DIR: >-
+            node -e "
+            const fs=require('fs'),path=require('path'),n=require('/tmp/nsv-js/index.js');
+            const dir=process.argv[1];
+            const files=fs.readdirSync(dir).filter(f=>f.endsWith('.nsv')).sort();
+            let passed=0,fails=[];
+            for(const f of files){const p=path.join(dir,f),orig=fs.readFileSync(p,'utf8');
+            n.stringify(n.parse(orig))===orig?passed++:fails.push(f)}
+            console.log('  '+passed+'/'+(passed+fails.length)+' passed');
+            fails.forEach(f=>console.log('  '+f));
+            if(fails.length)process.exit(1)"
 
   rust:
     runs-on: ubuntu-latest
@@ -99,17 +143,33 @@ jobs:
           git clone --depth 1 https://github.com/nsv-format/nsv-rust.git /tmp/nsv-rust
           mkdir -p /tmp/nsv-rust/examples
           cat > /tmp/nsv-rust/examples/roundtrip.rs << 'RUST'
-          use std::io::{self, Read, Write};
+          use std::{fs, process};
           fn main() {
-              let mut input = String::new();
-              io::stdin().read_to_string(&mut input).unwrap();
-              let data = nsv::decode(&input);
-              let output = nsv::encode(&data);
-              io::stdout().write_all(output.as_bytes()).unwrap();
+              let dir = std::env::args().nth(1).expect("usage: roundtrip <dir>");
+              let mut entries: Vec<_> = fs::read_dir(&dir).unwrap()
+                  .filter_map(|e| e.ok())
+                  .filter(|e| e.file_name().to_string_lossy().ends_with(".nsv"))
+                  .collect();
+              entries.sort_by_key(|e| e.file_name());
+              let mut passed = 0u32;
+              let mut fails = Vec::new();
+              for entry in &entries {
+                  let path = entry.path();
+                  let orig = fs::read_to_string(&path).unwrap();
+                  if nsv::encode(&nsv::decode(&orig)) == orig {
+                      passed += 1;
+                  } else {
+                      fails.push(entry.file_name().to_string_lossy().to_string());
+                  }
+              }
+              let total = entries.len();
+              println!("  {passed}/{total} passed");
+              for f in &fails { println!("  {f}"); }
+              if !fails.is_empty() { process::exit(1); }
           }
           RUST
           cd /tmp/nsv-rust && cargo build --release --example roundtrip
       - name: Conformance
         run: scripts/conformance.sh
         env:
-          NSV_ROUNDTRIP: /tmp/nsv-rust/target/release/examples/roundtrip
+          NSV_ROUNDTRIP_DIR: /tmp/nsv-rust/target/release/examples/roundtrip
