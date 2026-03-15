@@ -63,12 +63,13 @@ jobs:
           package org.nsvformat
           object Roundtrip:
             def main(args: Array[String]): Unit =
-              val input = scala.io.Source.fromInputStream(System.in).mkString
+              val input = new String(System.in.readAllBytes())
               print(Nsv.encode(Nsv.decode(input)))
           SCALA
           cd /tmp/nsv-scala && sbt -batch compile
-          cp=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
-          printf '#!/bin/sh\nexec java -cp "%s" org.nsvformat.Roundtrip "$@"\n' "$cp" > /tmp/nsv-roundtrip
+          classes=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
+          scala_cp=$(cs fetch --classpath org.scala-lang:scala3-library_3:3.3.7)
+          printf '#!/bin/sh\nexec java -cp "%s:%s" org.nsvformat.Roundtrip "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-roundtrip
           chmod +x /tmp/nsv-roundtrip
       - uses: ./
         with:
