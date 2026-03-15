@@ -2,9 +2,8 @@
 # Conformance test runner for NSV implementations.
 #
 # Verifies encode(decode(fixture)) == fixture (roundtrip identity)
-# for every valid fixture.  This is the core conformance property: an
-# implementation that roundtrips all canonical fixtures correctly
-# implements the NSV format.
+# for every valid fixture.  This checks that encode and decode are
+# consistent with each other, not that either is independently correct.
 #
 # Environment variables (provide EITHER roundtrip OR decode+encode):
 #   NSV_ROUNDTRIP  Single command: stdin=NSV bytes, stdout=NSV bytes.
