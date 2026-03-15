@@ -1,0 +1,114 @@
+name: Conformance
+
+on:
+  push:
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install nsv-python
+        run: pip install -q git+https://github.com/nsv-format/nsv-python.git@master
+      - uses: ./
+        with:
+          roundtrip: >-
+            python3 -c "
+            import sys, nsv;
+            sys.stdout.write(nsv.dumps(nsv.loads(sys.stdin.read())))"
+
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Build roundtrip helper
+        run: |
+          git clone --depth 1 https://github.com/nsv-format/nsv-java.git /tmp/nsv-java
+          cat > /tmp/nsv-java/src/main/java/org/nsvformat/Roundtrip.java << 'JAVA'
+          package org.nsvformat;
+          public class Roundtrip {
+              public static void main(String[] args) throws Exception {
+                  System.out.print(Nsv.encode(Nsv.decode(new String(System.in.readAllBytes()))));
+              }
+          }
+          JAVA
+          cd /tmp/nsv-java && mvn -q compile
+      - uses: ./
+        with:
+          roundtrip: java -cp /tmp/nsv-java/target/classes org.nsvformat.Roundtrip
+
+  scala:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: coursier/setup-action@v1
+      - name: Build roundtrip helper
+        run: |
+          git clone --depth 1 https://github.com/nsv-format/nsv-scala.git /tmp/nsv-scala
+          cat > /tmp/nsv-scala/src/Roundtrip.scala << 'SCALA'
+          package org.nsvformat
+          object Roundtrip:
+            def main(args: Array[String]): Unit =
+              val input = scala.io.Source.fromInputStream(System.in).mkString
+              print(Nsv.encode(Nsv.decode(input)))
+          SCALA
+          cd /tmp/nsv-scala && sbt -batch compile
+          cp=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
+          printf '#!/bin/sh\nexec java -cp "%s" org.nsvformat.Roundtrip "$@"\n' "$cp" > /tmp/nsv-roundtrip
+          chmod +x /tmp/nsv-roundtrip
+      - uses: ./
+        with:
+          roundtrip: /tmp/nsv-roundtrip
+
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Clone nsv-js
+        run: git clone --depth 1 https://github.com/nsv-format/nsv-js.git /tmp/nsv-js
+      - uses: ./
+        with:
+          roundtrip: >-
+            node -e "
+            const n=require('/tmp/nsv-js/index.js');
+            let d='';
+            process.stdin.on('data',c=>d+=c);
+            process.stdin.on('end',()=>process.stdout.write(n.stringify(n.parse(d))))"
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build roundtrip binary
+        run: |
+          git clone --depth 1 https://github.com/nsv-format/nsv-rust.git /tmp/nsv-rust
+          mkdir -p /tmp/nsv-rust/examples
+          cat > /tmp/nsv-rust/examples/roundtrip.rs << 'RUST'
+          use std::io::{self, Read, Write};
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).unwrap();
+              let data = nsv::decode(&input);
+              let output = nsv::encode(&data);
+              io::stdout().write_all(output.as_bytes()).unwrap();
+          }
+          RUST
+          cd /tmp/nsv-rust && cargo build --release --example roundtrip
+      - uses: ./
+        with:
+          roundtrip: /tmp/nsv-rust/target/release/examples/roundtrip

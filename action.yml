@@ -4,17 +4,22 @@ description: >
   Verifies encode(decode(fixture)) == fixture for all valid encodings.
 
 inputs:
+  roundtrip:
+    description: >
+      Single shell command: reads NSV bytes from stdin, writes NSV bytes
+      to stdout (decodes then re-encodes).  Use this OR decode+encode.
+    required: false
   decode:
     description: >
       Shell command: reads NSV bytes from stdin, writes decoded
       representation to stdout.  The output format is opaque — it only
       needs to be understood by the corresponding encode command.
-    required: true
+    required: false
   encode:
     description: >
       Shell command: reads the decode command's output format from stdin,
       writes NSV bytes to stdout.
-    required: true
+    required: false
   stress:
     description: >
       Run the 93 MB Champernowne stress test (default: false).
@@ -28,6 +33,7 @@ runs:
       shell: bash
       run: ${{ github.action_path }}/scripts/conformance.sh
       env:
+        NSV_ROUNDTRIP: ${{ inputs.roundtrip }}
         NSV_DECODE: ${{ inputs.decode }}
         NSV_ENCODE: ${{ inputs.encode }}
         NSV_STRESS: ${{ inputs.stress }}

@@ -6,18 +6,26 @@
 # implementation that roundtrips all canonical fixtures correctly
 # implements the NSV format.
 #
-# Environment variables:
-#   NSV_DECODE  Shell command: stdin=NSV bytes, stdout=decoded form.
-#   NSV_ENCODE  Shell command: stdin=decoded form, stdout=NSV bytes.
-#   NSV_STRESS  Set to "true" to include the Champernowne stress test.
+# Environment variables (provide EITHER roundtrip OR decode+encode):
+#   NSV_ROUNDTRIP  Single command: stdin=NSV bytes, stdout=NSV bytes.
+#   NSV_DECODE     Shell command: stdin=NSV bytes, stdout=decoded form.
+#   NSV_ENCODE     Shell command: stdin=decoded form, stdout=NSV bytes.
+#   NSV_STRESS     Set to "true" to include the Champernowne stress test.
 
 set -e
 
 SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VALID_DIR="$SELF_DIR/fixtures/valid"
 
-decode="${NSV_DECODE:?Set NSV_DECODE to your decode command}"
-encode="${NSV_ENCODE:?Set NSV_ENCODE to your encode command}"
+if [ -n "${NSV_ROUNDTRIP:-}" ]; then
+    rt_cmd="$NSV_ROUNDTRIP"
+elif [ -n "${NSV_DECODE:-}" ] && [ -n "${NSV_ENCODE:-}" ]; then
+    rt_cmd="$NSV_DECODE | $NSV_ENCODE"
+else
+    echo "Set NSV_ROUNDTRIP, or both NSV_DECODE and NSV_ENCODE." >&2
+    exit 1
+fi
+
 stress="${NSV_STRESS:-false}"
 
 tmpdir="$(mktemp -d)"
@@ -30,9 +38,8 @@ fail_list=""
 roundtrip() {
     _fixture="$1"
     _name="$2"
-    if eval "$decode" < "$_fixture" > "$tmpdir/decoded" &&
-       eval "$encode" < "$tmpdir/decoded" > "$tmpdir/encoded" &&
-       cmp -s "$_fixture" "$tmpdir/encoded"; then
+    if eval "$rt_cmd" < "$_fixture" > "$tmpdir/out" 2>/dev/null &&
+       cmp -s "$_fixture" "$tmpdir/out"; then
         passed=$((passed + 1))
     else
         failed=$((failed + 1))
