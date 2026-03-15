@@ -18,18 +18,20 @@ jobs:
       - name: Install nsv-python
         run: pip install git+https://github.com/nsv-format/nsv-python.git@master
       - name: Conformance
-        run: scripts/conformance.sh
-        env:
-          NSV_ROUNDTRIP_DIR: >-
-            python3 -c "
-            import os,sys,nsv;d=sys.argv[1];
-            entries=sorted(e for e in os.listdir(d) if e.endswith('.nsv'));
-            fails=[];
-            [fails.append(n) if nsv.dumps(nsv.loads(open(os.path.join(d,n)).read()))!=open(os.path.join(d,n)).read() else None for n in entries];
-            passed=len(entries)-len(fails);
-            print(f'  {passed}/{len(entries)} passed');
-            [print(f'  {f}') for f in fails];
-            sys.exit(1 if fails else 0)"
+        run: |
+          cat > /tmp/roundtrip.py << 'PY'
+          import os, sys, nsv
+          d = sys.argv[1]
+          entries = sorted(e for e in os.listdir(d) if e.endswith('.nsv'))
+          fails = [n for n in entries
+                   if nsv.dumps(nsv.loads(open(os.path.join(d, n)).read()))
+                      != open(os.path.join(d, n)).read()]
+          passed = len(entries) - len(fails)
+          print(f'  {passed}/{len(entries)} passed')
+          for f in fails: print(f'  {f}')
+          sys.exit(1 if fails else 0)
+          PY
+          NSV_ROUNDTRIP_DIR="python3 /tmp/roundtrip.py" scripts/conformance.sh
 
   java:
     runs-on: ubuntu-latest
@@ -119,19 +121,22 @@ jobs:
       - name: Clone nsv-js
         run: git clone --depth 1 https://github.com/nsv-format/nsv-js.git /tmp/nsv-js
       - name: Conformance
-        run: scripts/conformance.sh
-        env:
-          NSV_ROUNDTRIP_DIR: >-
-            node -e "
-            const fs=require('fs'),path=require('path'),n=require('/tmp/nsv-js/index.js');
-            const dir=process.argv[1];
-            const files=fs.readdirSync(dir).filter(f=>f.endsWith('.nsv')).sort();
-            let passed=0,fails=[];
-            for(const f of files){const p=path.join(dir,f),orig=fs.readFileSync(p,'utf8');
-            n.stringify(n.parse(orig))===orig?passed++:fails.push(f)}
-            console.log('  '+passed+'/'+(passed+fails.length)+' passed');
-            fails.forEach(f=>console.log('  '+f));
-            if(fails.length)process.exit(1)"
+        run: |
+          cat > /tmp/roundtrip.js << 'JS'
+          const fs = require('fs'), path = require('path');
+          const n = require('/tmp/nsv-js/index.js');
+          const dir = process.argv[2];
+          const files = fs.readdirSync(dir).filter(f => f.endsWith('.nsv')).sort();
+          let passed = 0; const fails = [];
+          for (const f of files) {
+              const p = path.join(dir, f), orig = fs.readFileSync(p, 'utf8');
+              n.stringify(n.parse(orig)) === orig ? passed++ : fails.push(f);
+          }
+          console.log(`  ${passed}/${passed + fails.length} passed`);
+          fails.forEach(f => console.log(`  ${f}`));
+          if (fails.length) process.exit(1);
+          JS
+          NSV_ROUNDTRIP_DIR="node /tmp/roundtrip.js" scripts/conformance.sh
 
   rust:
     runs-on: ubuntu-latest
