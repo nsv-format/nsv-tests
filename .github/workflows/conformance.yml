@@ -1,0 +1,92 @@
+name: Conformance
+
+on:
+  push:
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '0 6 * * *'  # daily, 06:00 UTC
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install nsv-python
+        run: pip install git+https://github.com/nsv-format/nsv-python.git@master
+      - name: Conformance
+        run: scripts/conformance.sh
+        env:
+          NSV_ROUNDTRIP_DIR: python3 .github/roundtrip/roundtrip.py
+
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Build roundtrip helper
+        run: |
+          git clone --depth 1 https://github.com/nsv-format/nsv-java.git /tmp/nsv-java
+          cp .github/roundtrip/Roundtrip.java /tmp/nsv-java/src/main/java/org/nsvformat/
+          cd /tmp/nsv-java && mvn -q compile
+      - name: Conformance
+        run: scripts/conformance.sh
+        env:
+          NSV_ROUNDTRIP_DIR: java -cp /tmp/nsv-java/target/classes org.nsvformat.Roundtrip
+
+  scala:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: coursier/setup-action@v1
+        with:
+          apps: sbt
+      - name: Build roundtrip helper
+        run: |
+          git clone --depth 1 https://github.com/nsv-format/nsv-scala.git /tmp/nsv-scala
+          cp .github/roundtrip/Roundtrip.scala /tmp/nsv-scala/src/
+          cd /tmp/nsv-scala && sbt -batch compile
+          classes=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
+          scala_cp=$(cs fetch --classpath org.scala-lang:scala3-library_3:3.3.7)
+          printf '#!/bin/sh\nexec java -cp "%s:%s" org.nsvformat.Roundtrip "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-roundtrip
+          chmod +x /tmp/nsv-roundtrip
+      - name: Conformance
+        run: scripts/conformance.sh
+        env:
+          NSV_ROUNDTRIP_DIR: /tmp/nsv-roundtrip
+
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Clone nsv-js
+        run: git clone --depth 1 https://github.com/nsv-format/nsv-js.git /tmp/nsv-js
+      - name: Conformance
+        run: scripts/conformance.sh
+        env:
+          NSV_ROUNDTRIP_DIR: node .github/roundtrip/roundtrip.js
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build roundtrip binary
+        run: |
+          git clone --depth 1 https://github.com/nsv-format/nsv-rust.git /tmp/nsv-rust
+          mkdir -p /tmp/nsv-rust/examples
+          cp .github/roundtrip/roundtrip.rs /tmp/nsv-rust/examples/
+          cd /tmp/nsv-rust && cargo build --release --example roundtrip
+      - name: Conformance
+        run: scripts/conformance.sh
+        env:
+          NSV_ROUNDTRIP_DIR: /tmp/nsv-rust/target/release/examples/roundtrip
