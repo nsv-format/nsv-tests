@@ -38,7 +38,7 @@ fail_list=""
 roundtrip() {
     _fixture="$1"
     _name="$2"
-    if eval "$rt_cmd" < "$_fixture" > "$tmpdir/out" 2>/dev/null &&
+    if eval "$rt_cmd" < "$_fixture" > "$tmpdir/out" &&
        cmp -s "$_fixture" "$tmpdir/out"; then
         passed=$((passed + 1))
     else

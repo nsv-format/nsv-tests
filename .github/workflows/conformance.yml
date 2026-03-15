@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
+    - cron: '0 6 * * *'  # daily, 06:00 UTC
 
 jobs:
   python:
@@ -16,13 +16,14 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install nsv-python
-        run: pip install -q git+https://github.com/nsv-format/nsv-python.git@master
+        run: pip install git+https://github.com/nsv-format/nsv-python.git@master
+      - name: Smoke test
+        run: |
+          printf '\n' | python3 -c "import sys,nsv;sys.stdout.write(nsv.dumps(nsv.loads(sys.stdin.read())))" | xxd
       - uses: ./
         with:
           roundtrip: >-
-            python3 -c "
-            import sys, nsv;
-            sys.stdout.write(nsv.dumps(nsv.loads(sys.stdin.read())))"
+            python3 -c "import sys,nsv;sys.stdout.write(nsv.dumps(nsv.loads(sys.stdin.read())))"
 
   java:
     runs-on: ubuntu-latest
@@ -53,6 +54,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: coursier/setup-action@v1
+        with:
+          apps: sbt
       - name: Build roundtrip helper
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-scala.git /tmp/nsv-scala
@@ -83,11 +86,7 @@ jobs:
       - uses: ./
         with:
           roundtrip: >-
-            node -e "
-            const n=require('/tmp/nsv-js/index.js');
-            let d='';
-            process.stdin.on('data',c=>d+=c);
-            process.stdin.on('end',()=>process.stdout.write(n.stringify(n.parse(d))))"
+            node -e "const n=require('/tmp/nsv-js/index.js');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(n.stringify(n.parse(d))))"
 
   rust:
     runs-on: ubuntu-latest
