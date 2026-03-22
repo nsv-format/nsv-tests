@@ -1,14 +1,13 @@
 #!/bin/sh
 # DuckDB roundtrip conformance test.
 #
-# Reads each .nsv fixture via the nsv-duckdb extension, writes it back,
-# and checks byte-exact identity.  All columns are kept as VARCHAR to
-# avoid type-narrowing changing values.
+# Reads each .nsv fixture via the nsv-duckdb extension (header=false),
+# writes it back, and checks byte-exact identity.  All columns are kept
+# as VARCHAR to avoid type-narrowing changing values.
 #
-# Because read_nsv always interprets the first row as column names
-# (and DuckDB rejects duplicate column names), we prepend a synthetic
-# header row with unique names, roundtrip through DuckDB, then strip
-# the synthetic header from the output before comparing.
+# With header=false the extension auto-generates column names (column0,
+# column1, …) and treats the first row as data.  COPY TO writes these
+# auto-generated names as a header row, which we strip before comparing.
 #
 # Skipped fixtures:
 #   - empty files (no rows)
@@ -105,36 +104,32 @@ for f in "$dir"/*.nsv; do
         continue
     fi
 
-    # Build a synthetic header row with unique column names (c0, c1, ...).
-    header_file="$(mktemp)"
+    # Compute the byte length of the auto-generated header row
+    # (column0\ncolumn1\n…\n\n) so we can strip it from the output.
+    header_len=1   # row terminator \n
     i=0
     while [ "$i" -lt "$ncols" ]; do
-        printf 'c%d\n' "$i" >> "$header_file"
+        cname="column${i}"
+        header_len=$((header_len + ${#cname} + 1))   # name + cell terminator \n
         i=$((i + 1))
     done
-    printf '\n' >> "$header_file"   # row terminator
-    header_len=$(wc -c < "$header_file")
-
-    # Prepend the synthetic header to the fixture.
-    input_file="$(mktemp)"
-    cat "$header_file" "$f" > "$input_file"
 
     out="$(mktemp)"
 
     if ! "$duckdb" -unsigned -noheader -csv :memory: <<SQL
 LOAD '${ext}';
-COPY (SELECT * FROM read_nsv('${input_file}', all_varchar=true))
+COPY (SELECT * FROM read_nsv('${f}', header=false, all_varchar=true))
   TO '${out}' (FORMAT 'nsv');
 SQL
     then
         failed=$((failed + 1))
         fails="${fails}  ${name}
 "
-        rm -f "$out" "$input_file" "$header_file"
+        rm -f "$out"
         continue
     fi
 
-    # Strip the synthetic header from the output.
+    # Strip the auto-generated header from the output.
     stripped="$(mktemp)"
     tail -c +"$((header_len + 1))" "$out" > "$stripped"
 
@@ -145,7 +140,7 @@ SQL
         fails="${fails}  ${name}
 "
     fi
-    rm -f "$out" "$input_file" "$header_file" "$stripped"
+    rm -f "$out" "$stripped"
 done
 
 total=$((passed + failed))

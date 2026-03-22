@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DUCKDB_VERSION: v1.5.0
-      NSV_EXT_VERSION: v0.1.0-rc1
+      NSV_EXT_VERSION: v0.1.0-rc2
     steps:
       - uses: actions/checkout@v4
       - name: Install DuckDB
