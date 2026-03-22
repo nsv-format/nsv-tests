@@ -90,3 +90,26 @@ jobs:
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: /tmp/nsv-rust/target/release/examples/roundtrip
+
+  duckdb:
+    runs-on: ubuntu-latest
+    env:
+      DUCKDB_VERSION: v1.5.0
+      NSV_EXT_VERSION: v0.1.0-rc2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install DuckDB
+        run: |
+          curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
+          unzip -o /tmp/duckdb.zip -d /tmp/duckdb
+          chmod +x /tmp/duckdb/duckdb
+      - name: Fetch nsv extension
+        run: |
+          curl -fsSL "https://github.com/nsv-format/nsv-duckdb/releases/download/${NSV_EXT_VERSION}/nsv-linux_amd64.duckdb_extension" \
+            -o /tmp/nsv.duckdb_extension
+      - name: Conformance
+        run: scripts/conformance.sh
+        env:
+          DUCKDB: /tmp/duckdb/duckdb
+          NSV_EXT: /tmp/nsv.duckdb_extension
+          NSV_ROUNDTRIP_DIR: .github/roundtrip/roundtrip_duckdb.sh
