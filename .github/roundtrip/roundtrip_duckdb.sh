@@ -47,8 +47,9 @@ nsv_first_row_cols() {
             if ($1 == "0a") { s = 1 }
             else if ($1 == "5c") { s = 4 }
         } else if (s == 3) {
-            # After 5c in S1: consume the 0a of empty-cell marker
-            s = 1
+            # After 5c in S1: if 0a, it was an empty cell; otherwise
+            # the 5c started a non-empty cell (escape sequence in S2).
+            if ($1 == "0a") { s = 1 } else { s = 2 }
         } else if (s == 4) {
             # After 5c in S2: consume escaped byte
             s = 2
