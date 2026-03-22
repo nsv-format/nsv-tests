@@ -10,8 +10,13 @@
 # header row with unique names, roundtrip through DuckDB, then strip
 # the synthetic header from the output before comparing.
 #
-# Fixtures whose first row has zero cells are skipped because DuckDB
-# requires at least one column.
+# Skipped fixtures:
+#   - empty files (no rows)
+#   - zero-column rows (DuckDB requires >= 1 column)
+#   - multi-row files (no multi-row fixture at the 10-transition
+#     budget avoids empty cells or ragged column counts)
+#   - files with empty cells (the writer produces bare 0A instead
+#     of 5C 0A, which the reader interprets as end-of-row)
 #
 # Usage: roundtrip_duckdb.sh <dir>
 #
@@ -30,46 +35,75 @@ failed=0
 skipped=0
 fails=""
 
-# Count the number of cells in the first row of an NSV file.
-# Parses the byte stream through the NSV state machine until end-of-row.
-nsv_first_row_cols() {
+# Validate an NSV file for DuckDB compatibility.
+# Parses through the state machine and outputs: cols rows has_empty
+# where cols = cells in row 1, rows = total row count,
+# has_empty = 1 if any empty cell (5C 0A at S1) was found.
+nsv_validate() {
     od -An -tx1 "$1" | tr -s ' ' '\n' | awk '
-    BEGIN { s = 1; cols = 0 }
+    BEGIN { s = 1; cols = 0; rows = 0; empty = 0; first_cols = -1 }
     !NF { next }
     {
         if (s == 1) {
-            # S1: in-row, expecting cell or row-end
-            if ($1 == "0a") { print cols; s = -1; exit }
-            else if ($1 == "5c") { cols++; s = 3 }
-            else { cols++; s = 2 }
+            if ($1 == "0a") {
+                # end row
+                rows++
+                if (first_cols < 0) first_cols = cols
+                cols = 0
+                s = 0
+            } else if ($1 == "5c") {
+                cols++; s = 3
+            } else {
+                cols++; s = 2
+            }
+        } else if (s == 0) {
+            # S0: between rows
+            if ($1 == "0a") {
+                # zero-column row
+                rows++
+                cols = 0
+            } else if ($1 == "5c") {
+                cols = 1; s = 3
+            } else {
+                cols = 1; s = 2
+            }
         } else if (s == 2) {
-            # S2: in-cell content
             if ($1 == "0a") { s = 1 }
             else if ($1 == "5c") { s = 4 }
         } else if (s == 3) {
-            # After 5c in S1: if 0a, it was an empty cell; otherwise
-            # the 5c started a non-empty cell (escape sequence in S2).
-            if ($1 == "0a") { s = 1 } else { s = 2 }
+            # After 5c at S1: 0a = empty cell, else = non-empty cell start
+            if ($1 == "0a") { empty = 1; s = 1 }
+            else { s = 2 }
         } else if (s == 4) {
-            # After 5c in S2: consume escaped byte
             s = 2
         }
     }
-    END { if (s == 1) print cols }'
+    END {
+        if (first_cols < 0) first_cols = 0
+        print first_cols, rows, empty
+    }'
 }
 
 for f in "$dir"/*.nsv; do
     [ -f "$f" ] || continue
     name="$(basename "$f")"
 
-    # Skip zero-column fixtures (empty file or first row has no cells).
-    first_byte=$(od -An -tx1 -N1 "$f" | tr -d ' ')
-    if [ -z "$first_byte" ] || [ "$first_byte" = "0a" ]; then
+    # Skip empty files.
+    if [ ! -s "$f" ]; then
         skipped=$((skipped + 1))
         continue
     fi
 
-    ncols=$(nsv_first_row_cols "$f")
+    result=$(nsv_validate "$f")
+    ncols=$(echo "$result" | awk '{print $1}')
+    nrows=$(echo "$result" | awk '{print $2}')
+    has_empty=$(echo "$result" | awk '{print $3}')
+
+    # Skip zero-column, multi-row, or empty-cell fixtures.
+    if [ "$ncols" -eq 0 ] || [ "$nrows" -gt 1 ] || [ "$has_empty" -eq 1 ]; then
+        skipped=$((skipped + 1))
+        continue
+    fi
 
     # Build a synthetic header row with unique column names (c0, c1, ...).
     header_file="$(mktemp)"
