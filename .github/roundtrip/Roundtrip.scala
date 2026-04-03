@@ -12,9 +12,10 @@ object Roundtrip:
         val tmp = Files.createTempFile("nsv-rt-", ".nsv")
         try
           val reader = Reader.fromPath(p)
-          val writer = Writer.fromPath(tmp)
+          val bw = new java.io.BufferedWriter(new java.io.FileWriter(tmp.toFile))
+          val writer = new Writer(bw)
           while reader.hasNext do writer.writeRow(reader.next())
-          writer.writer.close()
+          bw.close()
           if Files.mismatch(p, tmp) == -1L then passed += 1
           else { failed += 1; fails += p.getFileName.toString }
         finally Files.deleteIfExists(tmp)
