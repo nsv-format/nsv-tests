@@ -9,9 +9,15 @@ object Roundtrip:
     val fails = collection.mutable.ArrayBuffer[String]()
     Files.list(dir).sorted.forEach: p =>
       if p.toString.endsWith(".nsv") then
-        val orig = Files.readString(p)
-        if Nsv.encode(Nsv.decode(orig)) == orig then passed += 1
-        else { failed += 1; fails += p.getFileName.toString }
+        val tmp = Files.createTempFile("nsv-rt-", ".nsv")
+        try
+          val reader = Reader.fromPath(p)
+          val writer = Writer.fromPath(tmp)
+          while reader.hasNext do writer.writeRow(reader.next())
+          writer.writer.close()
+          if Files.mismatch(p, tmp) == -1L then passed += 1
+          else { failed += 1; fails += p.getFileName.toString }
+        finally Files.deleteIfExists(tmp)
     println(s"  $passed/${passed + failed} passed")
     fails.foreach(f => println(s"  $f"))
     if failed > 0 then System.exit(1)
