@@ -1,4 +1,5 @@
 # NSV fixtures are raw binary — prevent line-ending normalization
 fixtures/enum/*.nsv binary
 fixtures/champernowne.nsv binary
+fixtures/champernowne-fixed.nsv binary
 fixtures/valid/*.nsv binary

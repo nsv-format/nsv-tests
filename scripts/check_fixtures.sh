@@ -33,6 +33,15 @@ else
     exit 1
 fi
 
+CHAMPERNOWNE_FIXED="$REPO_ROOT/fixtures/champernowne-fixed.nsv"
+
+if diff "$CHAMPERNOWNE_FIXED" "$tmpdir/champernowne-fixed.nsv"; then
+    echo "Fixed-point Champernowne fixture is up to date."
+else
+    echo "Fixed-point Champernowne fixture differs from fresh generation." >&2
+    exit 1
+fi
+
 # --- Valid encoding fixtures ---
 VALID_DIR="$REPO_ROOT/fixtures/valid"
 
