@@ -23,6 +23,15 @@ stress="${NSV_STRESS:-false}"
 echo "--- valid fixtures (roundtrip) ---"
 eval "$cmd" "$SELF_DIR/fixtures/valid"
 
+if [ -f "$SELF_DIR/fixtures/champernowne-fixed.nsv" ]; then
+    tmpdir_fixed="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir_fixed"' EXIT
+    ln -s "$SELF_DIR/fixtures/champernowne-fixed.nsv" "$tmpdir_fixed/champernowne-fixed.nsv"
+    echo ""
+    echo "--- champernowne-fixed (roundtrip) ---"
+    eval "$cmd" "$tmpdir_fixed"
+fi
+
 if [ "$stress" = "true" ] && [ -f "$SELF_DIR/fixtures/champernowne.nsv" ]; then
     tmpdir="$(mktemp -d)"
     trap 'rm -rf "$tmpdir"' EXIT

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
+# dependencies = ["nsv"]
 # ///
 """Generate Champernowne-style NSV test fixture.
 
@@ -15,6 +16,8 @@ Same iteration order as gen_enum.py, but all bytes go into one file.
 import argparse
 import itertools
 from pathlib import Path
+
+import nsv
 
 ALPHABET = {
     "0": b"\x0a",  # LF
@@ -81,6 +84,13 @@ def main() -> None:
     print(f"Wrote {total_bytes} bytes to {args.out}")
     assert total_bytes == expect, f"Expected {expect} bytes, got {total_bytes}"
     print(f"Sanity check passed: {total_bytes} == {expect}")
+
+    # Generate fixed-point: decode as NSV and re-encode.
+    raw = args.out.read_text()
+    fixed = nsv.dumps(nsv.loads(raw))
+    fixed_out = args.out.with_name("champernowne-fixed.nsv")
+    fixed_out.write_text(fixed)
+    print(f"Wrote {len(fixed)} bytes to {fixed_out}")
 
 
 if __name__ == "__main__":
