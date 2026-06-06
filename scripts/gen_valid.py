@@ -59,18 +59,29 @@ def generate(max_transitions: int, out_dir: Path) -> int:
 
     count = 0
 
-    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path)
-    stack: list[tuple[int, bytes, int, str]] = [(S0, b"", 0, "")]
+    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path,
+    # cell_dirty). cell_dirty matters only while state == S2: it records whether
+    # the current cell has accumulated at least one content byte. A non-empty
+    # cell must actually contain content, so the end-cell transition (S2 -> S1)
+    # is forbidden until at least one add self-loop has run. Without this guard a
+    # zero-content cell emits a bare 0A, byte-identical to an end-row 0A, which
+    # breaks injectivity (e.g. "121" collides with "101", both 0A 0A).
+    stack: list[tuple[int, bytes, int, str, bool]] = [(S0, b"", 0, "", False)]
 
     while stack:
-        state, acc, used, path = stack.pop()
+        state, acc, used, path, cell_dirty = stack.pop()
 
         if used >= max_transitions:
             continue
 
-        children: list[tuple[int, bytes, int, str]] = []
+        children: list[tuple[int, bytes, int, str, bool]] = []
 
         for next_state, emitted, path_char in TRANSITIONS[state]:
+            # Forbid closing a cell with no content: it would emit a bare 0A
+            # indistinguishable from an end-row terminator.
+            if state == S2 and next_state == S1 and not cell_dirty:
+                continue
+
             new_acc = acc + emitted if emitted else acc
             new_used = used + 1
 
@@ -81,7 +92,13 @@ def generate(max_transitions: int, out_dir: Path) -> int:
                 (out_dir / (stem + ".nsv")).write_bytes(new_acc)
                 count += 1
             elif new_used < max_transitions:
-                children.append((next_state, new_acc, new_used, path + path_char))
+                # A fresh cell (S1 -> S2) starts empty; an add self-loop
+                # (S2 -> S2) marks it dirty. Any other destination is outside
+                # a cell, so the flag is irrelevant.
+                new_dirty = next_state == S2 and state == S2
+                children.append(
+                    (next_state, new_acc, new_used, path + path_char, new_dirty)
+                )
 
         # Push children in reverse order so first child is popped first (DFS)
         for child in reversed(children):

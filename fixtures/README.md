@@ -49,8 +49,9 @@ From **S1**:
 - **start empty cell** → S1, emit `5C 0A`
 - **start non-empty cell** → S2, emit nothing
 
-From **S2**:
-- **end cell** → S1, emit `0A`
+From **S2** (inside a non-empty cell):
+- **end cell** → S1, emit `0A` — permitted only once at least one content
+  byte has been added; a non-empty cell must contain content
 - **add 'a'** → S2, emit `61`
 - **add escaped backslash** → S2, emit `5C 5C`
 - **add escaped newline** → S2, emit `5C 6E`
@@ -62,6 +63,10 @@ Each path that reaches acceptance (via the accept transition from S0)
 produces one fixture file containing the accumulated emitted bytes.
 
 The accept transition counts toward the transition limit.
+
+The end-cell transition (S2 → S1) is pruned while the current cell has no
+content yet: a zero-content cell would emit a bare `0A`, indistinguishable
+from an end-row terminator, which would break injectivity (see below).
 
 At each state, transitions are explored in the order listed above
 (accept before start row, end row before start empty cell before start
@@ -130,16 +135,39 @@ valid encoding therefore maps to a complete path from S0 to acceptance.
 
 Distinct paths produce distinct byte sequences.
 
-The token set `{0A, 5C 5C, 5C 6E, 5C 0A, 61}` is prefix-free:
+First, tokenization is unique. The token set
+`{0A, 5C 5C, 5C 6E, 5C 0A, 61}` is prefix-free:
 
 - After `5C`, the next byte uniquely determines the token:
   `5C` → `5C 5C`, `6E` → `5C 6E`, `0A` → `5C 0A`.
 - `0A` and `61` are unambiguous single-byte tokens (neither is `5C`).
 
-Because the token set is prefix-free, any byte sequence has at most one
-tokenization. Each token maps to exactly one transition (in context of
-the current state — `0A` is unambiguously end-cell in S2 or end-row in
-S1). Therefore distinct paths produce distinct byte sequences.
+So any byte sequence has at most one tokenization. Prefix-freeness alone
+is *not* sufficient, however: the token `0A` is emitted by two different
+transitions — end-cell (S2 → S1) and end-row (S1 → S0) — and the byte
+stream does not record which state produced it. Recovering the path
+requires distinguishing the two from context.
+
+The non-empty-cell constraint makes this possible: end-cell is forbidden
+until the cell has at least one content byte (see the S2 transitions
+above), so every cell emits at least one content token before its `0A`.
+Replay the tokens left to right, tracking the current state:
+
+- In **S1** (row level), a content token (`61`, `5C 5C`, `5C 6E`) can only
+  begin a non-empty cell, forcing S1 → S2; `5C 0A` is the empty-cell token
+  (S1 → S1); and a bare `0A` cannot be an end-cell (we are not in a cell),
+  so it is unambiguously end-row (S1 → S0).
+- In **S2** (in a cell), content tokens are add self-loops and `0A` is
+  end-cell (S2 → S1).
+
+Each token therefore maps to exactly one transition given the state
+reached so far, and the state evolves deterministically, so the path is
+uniquely recovered from the bytes. Distinct paths produce distinct byte
+sequences.
+
+Without the non-empty-cell constraint this fails: a zero-content cell
+(`S1 → S2 → S1`) emits a bare `0A` identical to an end-row, so the paths
+`121` and `101` would both encode `0A 0A`.
 
 #### Safety
 
