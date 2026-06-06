@@ -7,15 +7,15 @@
 DFS from S0 through all paths up to --max-transitions transitions.
 Each path reaching acceptance produces a unique .nsv fixture file.
 
-Filenames encode the state-machine path. State-changing transitions
-use the destination state digit (0/1/2). S2 self-loops use a content
-letter: a (add 'a'), b (escaped backslash), n (escaped newline).
-The initial S0 and final S0+accept are implicit, so the filename is
-the interior of the state sequence. Examples:
+Filenames encode the state-machine path. Structural moves use the
+destination digit (0/1/2); cell content adds use a letter: a (add 'a'),
+b (escaped backslash), n (escaped newline). The initial S0 and final
+S0+accept are implicit, so the filename is the interior of the state
+sequence. Examples:
 
   .nsv        (empty)                              (empty encoding)
   1.nsv       S0 → S1 → S0                        (one empty row)
-  12a1.nsv    S0 → S1 → S2 → S2 → S1 → S0        (row, cell with 'a')
+  12a1.nsv    S0 → S1 → S2 → S3 → S1 → S0        (row, cell with 'a')
 """
 
 import argparse
@@ -24,15 +24,23 @@ from pathlib import Path
 
 # States
 S0 = 0  # not-in-row (initial and accepting)
-S1 = 1  # in-row
-S2 = 2  # in-cell
+S1 = 1  # in-row, between cells
+S2 = 2  # in a non-empty cell, no content added yet
+S3 = 3  # in a non-empty cell, with content
 
 # Transitions per state, in canonical DFS order.
 # Each entry: (next_state, emitted_bytes, path_char)
 # next_state is None for the accept transition.
 # path_char encodes the transition in the filename:
-#   State-changing transitions use the destination state digit.
-#   S2 self-loops use a content letter: a, b, n.
+#   Structural moves use the destination digit: 1 (S1), 2 (entered a cell),
+#   0 (S0, dropped when it is the final transition). Cell content adds use a
+#   letter: a (add 'a'), b (escaped backslash), n (escaped newline).
+#
+# A non-empty cell must contain content, which is enforced structurally
+# rather than with a precondition: S2 (cell just opened) has no transition
+# back to S1. The only way to close a cell is via S3 (cell with content),
+# which is reachable only by adding at least one content byte. A cell can
+# therefore never emit a bare 0A, so end-cell and end-row never collide.
 TRANSITIONS: dict[int, list[tuple[int | None, bytes, str]]] = {
     S0: [
         (None, b"", ""),            # accept
@@ -44,10 +52,15 @@ TRANSITIONS: dict[int, list[tuple[int | None, bytes, str]]] = {
         (S2, b"", "2"),             # start non-empty cell
     ],
     S2: [
+        (S3, b"\x61", "a"),         # add 'a'
+        (S3, b"\x5c\x5c", "b"),     # add escaped backslash
+        (S3, b"\x5c\x6e", "n"),     # add escaped newline
+    ],
+    S3: [
         (S1, b"\x0a", "1"),         # end cell
-        (S2, b"\x61", "a"),         # add 'a'
-        (S2, b"\x5c\x5c", "b"),    # add escaped backslash
-        (S2, b"\x5c\x6e", "n"),    # add escaped newline
+        (S3, b"\x61", "a"),         # add 'a'
+        (S3, b"\x5c\x5c", "b"),     # add escaped backslash
+        (S3, b"\x5c\x6e", "n"),     # add escaped newline
     ],
 }
 
@@ -59,29 +72,18 @@ def generate(max_transitions: int, out_dir: Path) -> int:
 
     count = 0
 
-    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path,
-    # cell_dirty). cell_dirty matters only while state == S2: it records whether
-    # the current cell has accumulated at least one content byte. A non-empty
-    # cell must actually contain content, so the end-cell transition (S2 -> S1)
-    # is forbidden until at least one add self-loop has run. Without this guard a
-    # zero-content cell emits a bare 0A, byte-identical to an end-row 0A, which
-    # breaks injectivity (e.g. "121" collides with "101", both 0A 0A).
-    stack: list[tuple[int, bytes, int, str, bool]] = [(S0, b"", 0, "", False)]
+    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path)
+    stack: list[tuple[int, bytes, int, str]] = [(S0, b"", 0, "")]
 
     while stack:
-        state, acc, used, path, cell_dirty = stack.pop()
+        state, acc, used, path = stack.pop()
 
         if used >= max_transitions:
             continue
 
-        children: list[tuple[int, bytes, int, str, bool]] = []
+        children: list[tuple[int, bytes, int, str]] = []
 
         for next_state, emitted, path_char in TRANSITIONS[state]:
-            # Forbid closing a cell with no content: it would emit a bare 0A
-            # indistinguishable from an end-row terminator.
-            if state == S2 and next_state == S1 and not cell_dirty:
-                continue
-
             new_acc = acc + emitted if emitted else acc
             new_used = used + 1
 
@@ -92,13 +94,7 @@ def generate(max_transitions: int, out_dir: Path) -> int:
                 (out_dir / (stem + ".nsv")).write_bytes(new_acc)
                 count += 1
             elif new_used < max_transitions:
-                # A fresh cell (S1 -> S2) starts empty; an add self-loop
-                # (S2 -> S2) marks it dirty. Any other destination is outside
-                # a cell, so the flag is irrelevant.
-                new_dirty = next_state == S2 and state == S2
-                children.append(
-                    (next_state, new_acc, new_used, path + path_char, new_dirty)
-                )
+                children.append((next_state, new_acc, new_used, path + path_char))
 
         # Push children in reverse order so first child is popped first (DFS)
         for child in reversed(children):

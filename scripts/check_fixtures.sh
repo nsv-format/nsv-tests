@@ -53,3 +53,17 @@ else
     echo "Valid encoding fixtures differ from fresh generation." >&2
     exit 1
 fi
+
+# Injectivity guard: distinct paths (filenames) must produce distinct bytes.
+# Catches regressions like a zero-content cell emitting a bare 0A that
+# collides with an end-row terminator.
+collisions="$(find "$VALID_DIR" -type f -name '*.nsv' -exec md5sum {} + \
+    | awk '{print $1}' | sort | uniq -d)"
+if [ -z "$collisions" ]; then
+    echo "Valid encoding fixtures are injective (all byte-distinct)."
+else
+    echo "Valid encoding fixtures are NOT injective: distinct names share bytes." >&2
+    find "$VALID_DIR" -type f -name '*.nsv' -exec md5sum {} + \
+        | sort | awk 'h[$1]++ {print}' >&2
+    exit 1
+fi

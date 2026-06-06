@@ -34,9 +34,18 @@ NDFA traversal. Default bound: 10 transitions.
 
 ### State machine
 
-Three states: **S0** (not-in-row), **S1** (in-row), **S2** (in-cell).
+Four states: **S0** (not-in-row), **S1** (in-row, between cells), **S2**
+(in a non-empty cell, no content yet), **S3** (in a non-empty cell, with
+content).
 
 S0 is both the initial state and the sole accepting state.
+
+S2 and S3 both mean "inside a non-empty cell"; they are kept distinct so
+that the requirement *a non-empty cell must contain content* is enforced
+by the graph rather than by a precondition. S2 (cell just opened) has no
+transition back to S1 — the only way to close a cell is from S3, which is
+reached only by adding at least one content byte. A cell therefore can
+never emit a bare `0A`, so end-cell and end-row never collide.
 
 Transitions (each produces zero or more bytes):
 
@@ -49,12 +58,16 @@ From **S1**:
 - **start empty cell** → S1, emit `5C 0A`
 - **start non-empty cell** → S2, emit nothing
 
-From **S2** (inside a non-empty cell):
-- **end cell** → S1, emit `0A` — permitted only once at least one content
-  byte has been added; a non-empty cell must contain content
-- **add 'a'** → S2, emit `61`
-- **add escaped backslash** → S2, emit `5C 5C`
-- **add escaped newline** → S2, emit `5C 6E`
+From **S2** (cell opened, still empty — cannot be closed):
+- **add 'a'** → S3, emit `61`
+- **add escaped backslash** → S3, emit `5C 5C`
+- **add escaped newline** → S3, emit `5C 6E`
+
+From **S3** (cell has content):
+- **end cell** → S1, emit `0A`
+- **add 'a'** → S3, emit `61`
+- **add escaped backslash** → S3, emit `5C 5C`
+- **add escaped newline** → S3, emit `5C 6E`
 
 ### Generation
 
@@ -64,15 +77,9 @@ produces one fixture file containing the accumulated emitted bytes.
 
 The accept transition counts toward the transition limit.
 
-The end-cell transition (S2 → S1) is pruned while the current cell has no
-content yet: a zero-content cell would emit a bare `0A`, indistinguishable
-from an end-row terminator, which would break injectivity (see below).
-
-At each state, transitions are explored in the order listed above
-(accept before start row, end row before start empty cell before start
-non-empty cell, end cell before add 'a' before add escaped backslash
-before add escaped newline). DFS fully explores the first transition
-before the second, producing a deterministic canonical ordering.
+At each state, transitions are explored top-to-bottom in the order listed
+above. DFS fully explores the first transition before moving to the next,
+producing a deterministic canonical ordering.
 
 ### Filename encoding
 
@@ -81,23 +88,24 @@ initial S0 and the final S0 + accept are always implicit (every path
 starts and ends there), so the filename contains only the interior of
 the state sequence.
 
-State-changing transitions append the destination state digit (`0`, `1`,
-`2`). S2 self-loops append a content letter instead: `a` (add 'a'), `b`
-(add escaped backslash), `n` (add escaped newline). Each letter stands
-in for the S2 that would otherwise follow — so path length in
-characters equals the number of interior state visits.
+Structural transitions append the destination digit: `1` (entered S1,
+row-level), `2` (entered a cell), `0` (returned to S0, row ended). Cell
+content adds append a letter instead: `a` (add 'a'), `b` (add escaped
+backslash), `n` (add escaped newline). The cell states S2 and S3 share
+the single `2` on entry; subsequent content adds appear as letters, and
+the closing `1` returns to S1.
 
-| Filename      | Path                             | Encoding   |
-|---------------|----------------------------------|------------|
-| `.nsv`        | (empty)                          | (empty)    |
-| `1.nsv`       | S0 → S1 → S0                    | `0A`       |
-| `101.nsv`     | S0 → S1 → S0 → S1 → S0         | `0A 0A`    |
-| `11.nsv`      | S0 → S1 → S1 → S0              | `5C 0A 0A` |
-| `12a1.nsv`    | S0 → S1 → S2 → S2 → S1 → S0    | `61 0A 0A` |
-| `12abn1.nsv`  | S0 → S1 → S2(×4) → S1 → S0     | `61 5C 5C 5C 6E 0A 0A` |
+| Filename      | Path                                  | Encoding   |
+|---------------|---------------------------------------|------------|
+| `.nsv`        | (empty)                               | (empty)    |
+| `1.nsv`       | S0 → S1 → S0                         | `0A`       |
+| `101.nsv`     | S0 → S1 → S0 → S1 → S0              | `0A 0A`    |
+| `11.nsv`      | S0 → S1 → S1 → S0                   | `5C 0A 0A` |
+| `12a1.nsv`    | S0 → S1 → S2 → S3 → S1 → S0         | `61 0A 0A` |
+| `12abn1.nsv`  | S0 → S1 → S2 → S3 → S3 → S3 → S1 → S0 | `61 5C 5C 5C 6E 0A 0A` |
 
 Reading a filename: digits are structural (row/cell boundaries), letters
-are cell content. `1` = entered S1 (row-level), `2` = entered S2 (cell),
+are cell content. `1` = entered S1 (row-level), `2` = entered a cell,
 `0` = returned to S0 (row ended). Inside a cell, `a`/`b`/`n` are the
 content bytes written before the cell closes with the next `1`.
 
@@ -116,17 +124,20 @@ of terminated cells. Each cell is either:
 
 Map each structural element to its transition:
 
-| Element                  | Transition               |
-|--------------------------|--------------------------|
-| begin a row              | start row (S0 → S1)     |
-| empty cell token `5C 0A` | start empty cell (S1 → S1) |
-| begin a non-empty cell   | start non-empty cell (S1 → S2) |
-| content byte `61`        | add 'a' (S2 → S2)       |
-| content bytes `5C 5C`    | add escaped backslash (S2 → S2) |
-| content bytes `5C 6E`    | add escaped newline (S2 → S2) |
-| cell terminator `0A`     | end cell (S2 → S1)      |
-| row terminator `0A`      | end row (S1 → S0)       |
-| end of encoding          | accept (S0 → stop)      |
+| Element                       | Transition                       |
+|-------------------------------|----------------------------------|
+| begin a row                   | start row (S0 → S1)             |
+| empty cell token `5C 0A`      | start empty cell (S1 → S1)      |
+| begin a non-empty cell        | start non-empty cell (S1 → S2)  |
+| first content byte of a cell  | add (S2 → S3)                   |
+| further content byte of a cell| add (S3 → S3)                   |
+| cell terminator `0A`          | end cell (S3 → S1)              |
+| row terminator `0A`           | end row (S1 → S0)               |
+| end of encoding               | accept (S0 → stop)              |
+
+(Content bytes are `61` for `add 'a'`, `5C 5C` for escaped backslash, and
+`5C 6E` for escaped newline. The first add moves S2 → S3; subsequent adds
+self-loop on S3.)
 
 Every byte in the encoding is consumed by exactly one transition. Every
 valid encoding therefore maps to a complete path from S0 to acceptance.
@@ -144,30 +155,32 @@ First, tokenization is unique. The token set
 
 So any byte sequence has at most one tokenization. Prefix-freeness alone
 is *not* sufficient, however: the token `0A` is emitted by two different
-transitions — end-cell (S2 → S1) and end-row (S1 → S0) — and the byte
+transitions — end-cell (S3 → S1) and end-row (S1 → S0) — and the byte
 stream does not record which state produced it. Recovering the path
 requires distinguishing the two from context.
 
-The non-empty-cell constraint makes this possible: end-cell is forbidden
-until the cell has at least one content byte (see the S2 transitions
-above), so every cell emits at least one content token before its `0A`.
-Replay the tokens left to right, tracking the current state:
+The state machine makes this possible because a cell cannot be closed
+without content: S2 (cell just opened) has no edge to S1, so a cell is
+only closed from S3, which is reached only after ≥1 content token. Every
+cell therefore emits at least one content token before its `0A`. Replay
+the tokens left to right, tracking the current state:
 
 - In **S1** (row level), a content token (`61`, `5C 5C`, `5C 6E`) can only
-  begin a non-empty cell, forcing S1 → S2; `5C 0A` is the empty-cell token
-  (S1 → S1); and a bare `0A` cannot be an end-cell (we are not in a cell),
-  so it is unambiguously end-row (S1 → S0).
-- In **S2** (in a cell), content tokens are add self-loops and `0A` is
-  end-cell (S2 → S1).
+  begin a non-empty cell, forcing S1 → S2 → S3; `5C 0A` is the empty-cell
+  token (S1 → S1); and a bare `0A` cannot be an end-cell (we are not in a
+  cell), so it is unambiguously end-row (S1 → S0).
+- In **S3** (in a cell with content), content tokens are add self-loops
+  and `0A` is end-cell (S3 → S1).
 
 Each token therefore maps to exactly one transition given the state
 reached so far, and the state evolves deterministically, so the path is
 uniquely recovered from the bytes. Distinct paths produce distinct byte
 sequences.
 
-Without the non-empty-cell constraint this fails: a zero-content cell
-(`S1 → S2 → S1`) emits a bare `0A` identical to an end-row, so the paths
-`121` and `101` would both encode `0A 0A`.
+Were S2 allowed to close directly (S2 → S1), this would fail: a
+zero-content cell would emit a bare `0A` identical to an end-row, so the
+paths `121` and `101` would both encode `0A 0A`. Splitting the cell into
+S2 (empty) and S3 (has content) is exactly what rules that out.
 
 #### Safety
 
