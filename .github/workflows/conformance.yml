@@ -112,4 +112,4 @@ jobs:
         env:
           DUCKDB: /tmp/duckdb/duckdb
           NSV_EXT: /tmp/nsv.duckdb_extension
-          NSV_ROUNDTRIP_DIR: .github/roundtrip/roundtrip_duckdb.sh
+          NSV_ROUNDTRIP_DIR: sh .github/roundtrip/roundtrip_duckdb.sh
