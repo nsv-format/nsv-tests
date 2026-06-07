@@ -94,23 +94,39 @@ jobs:
 
   duckdb:
     runs-on: ubuntu-latest
-    env:
-      DUCKDB_VERSION: v1.5.0
-      NSV_EXT_VERSION: v0.1.0-rc2
+    # Pull the extension built from nsv-duckdb master (latest successful build
+    # pipeline run) so conformance tracks the implementation, not a pinned
+    # release. Requires NSV_DUCKDB_CI_TOKEN: a fine-grained PAT with Actions:
+    # Read on nsv-format/nsv-duckdb, because Actions artifacts (unlike release
+    # assets) are not anonymously downloadable. Skipped on plain branch pushes.
+    if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@v4
-      - name: Install DuckDB
+      - name: Download latest master extension build from nsv-duckdb
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.NSV_DUCKDB_CI_TOKEN }}
+          repo: nsv-format/nsv-duckdb
+          workflow: MainDistributionPipeline.yml
+          branch: master
+          workflow_conclusion: success
+          name: nsv-v1.5.1-extension-linux_amd64
+          path: /tmp/ext
+      - name: Install DuckDB v1.5.1
         run: |
-          curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
+          curl -fsSL "https://github.com/duckdb/duckdb/releases/download/v1.5.1/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
           unzip -o /tmp/duckdb.zip -d /tmp/duckdb
           chmod +x /tmp/duckdb/duckdb
-      - name: Fetch nsv extension
+      - name: Locate extension binary
         run: |
-          curl -fsSL "https://github.com/nsv-format/nsv-duckdb/releases/download/${NSV_EXT_VERSION}/nsv-linux_amd64.duckdb_extension" \
-            -o /tmp/nsv.duckdb_extension
+          ext="$(find /tmp/ext -name 'nsv.duckdb_extension*' | head -1)"
+          case "$ext" in
+            *.gz) gunzip -f "$ext"; ext="${ext%.gz}" ;;
+          esac
+          echo "NSV_EXT=$ext" >> "$GITHUB_ENV"
       - name: Conformance
         run: scripts/conformance.sh
         env:
           DUCKDB: /tmp/duckdb/duckdb
-          NSV_EXT: /tmp/nsv.duckdb_extension
+          NSV_EXT: ${{ env.NSV_EXT }}
           NSV_ROUNDTRIP_DIR: sh .github/roundtrip/roundtrip_duckdb.sh
