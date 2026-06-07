@@ -98,8 +98,7 @@ jobs:
     # pipeline run) so conformance tracks the implementation, not a pinned
     # release. Requires NSV_DUCKDB_CI_TOKEN: a fine-grained PAT with Actions:
     # Read on nsv-format/nsv-duckdb, because Actions artifacts (unlike release
-    # assets) are not anonymously downloadable. Skipped on plain branch pushes.
-    if: github.event_name != 'push'
+    # assets) are not anonymously downloadable.
     steps:
       - uses: actions/checkout@v4
       - name: Download latest master extension build from nsv-duckdb
