@@ -110,7 +110,6 @@ jobs:
       - name: Resolve DuckDB version + extension from the artifact name
         run: |
           dir=$(echo /tmp/ext/nsv-v*-extension-linux_amd64)
-          gunzip -f "$dir/nsv.duckdb_extension.gz"
           echo "NSV_EXT=$dir/nsv.duckdb_extension" >> "$GITHUB_ENV"
           echo "DUCKDB_VERSION=$(basename "$dir" | sed -E 's/^nsv-([^-]+)-extension-.*/\1/')" >> "$GITHUB_ENV"
       - name: Install the matching DuckDB
