@@ -94,11 +94,8 @@ jobs:
 
   duckdb:
     runs-on: ubuntu-latest
-    # Pull the extension built from nsv-duckdb master (latest successful build
-    # pipeline run) so conformance tracks the implementation, not a pinned
-    # release. Requires NSV_DUCKDB_CI_TOKEN: a fine-grained PAT with Actions:
-    # Read on nsv-format/nsv-duckdb, because Actions artifacts (unlike release
-    # assets) are not anonymously downloadable.
+    env:
+      EXT_DUCKDB_VERSION: v1.5.1   # DuckDB version the master extension is built for; bump with nsv-duckdb
     steps:
       - uses: actions/checkout@v4
       - name: Download latest master extension build from nsv-duckdb
@@ -109,11 +106,11 @@ jobs:
           workflow: MainDistributionPipeline.yml
           branch: master
           workflow_conclusion: success
-          name: nsv-v1.5.1-extension-linux_amd64
+          name: nsv-${{ env.EXT_DUCKDB_VERSION }}-extension-linux_amd64
           path: /tmp/ext
-      - name: Install DuckDB v1.5.1
+      - name: Install latest DuckDB
         run: |
-          curl -fsSL "https://github.com/duckdb/duckdb/releases/download/v1.5.1/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
+          curl -fsSL "https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
           unzip -o /tmp/duckdb.zip -d /tmp/duckdb
           chmod +x /tmp/duckdb/duckdb
       - name: Locate extension binary
