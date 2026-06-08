@@ -109,11 +109,10 @@ jobs:
           path: /tmp/ext
       - name: Resolve DuckDB version + extension from the artifact name
         run: |
-          art="$(find /tmp/ext -maxdepth 1 -type d -name 'nsv-v*-extension-linux_amd64' | head -1)"
-          echo "DUCKDB_VERSION=$(basename "$art" | sed -E 's/^nsv-([^-]+)-extension-.*/\1/')" >> "$GITHUB_ENV"
-          ext="$(find "$art" -name 'nsv.duckdb_extension*' | head -1)"
-          case "$ext" in *.gz) gunzip -f "$ext"; ext="${ext%.gz}" ;; esac
-          echo "NSV_EXT=$ext" >> "$GITHUB_ENV"
+          dir=$(echo /tmp/ext/nsv-v*-extension-linux_amd64)
+          gunzip -f "$dir/nsv.duckdb_extension.gz"
+          echo "NSV_EXT=$dir/nsv.duckdb_extension" >> "$GITHUB_ENV"
+          echo "DUCKDB_VERSION=$(basename "$dir" | sed -E 's/^nsv-([^-]+)-extension-.*/\1/')" >> "$GITHUB_ENV"
       - name: Install the matching DuckDB
         run: |
           curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
