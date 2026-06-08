@@ -14,8 +14,6 @@
 #   - zero-column rows (DuckDB requires >= 1 column)
 #   - multi-row files (no multi-row fixture at the 10-transition
 #     budget avoids empty cells or ragged column counts)
-#   - files with empty cells (the writer produces bare 0A instead
-#     of 5C 0A, which the reader interprets as end-of-row)
 #
 # Usage: roundtrip_duckdb.sh <dir>
 #
@@ -35,12 +33,11 @@ skipped=0
 fails=""
 
 # Validate an NSV file for DuckDB compatibility.
-# Parses through the state machine and outputs: cols rows has_empty
-# where cols = cells in row 1, rows = total row count,
-# has_empty = 1 if any empty cell (5C 0A at S1) was found.
+# Parses through the state machine and outputs: cols rows
+# where cols = cells in row 1, rows = total row count.
 nsv_validate() {
     od -An -tx1 "$1" | tr -s ' ' '\n' | awk '
-    BEGIN { s = 1; cols = 0; rows = 0; empty = 0; first_cols = -1 }
+    BEGIN { s = 1; cols = 0; rows = 0; first_cols = -1 }
     !NF { next }
     {
         if (s == 1) {
@@ -71,7 +68,7 @@ nsv_validate() {
             else if ($1 == "5c") { s = 4 }
         } else if (s == 3) {
             # After 5c at S1: 0a = empty cell, else = non-empty cell start
-            if ($1 == "0a") { empty = 1; s = 1 }
+            if ($1 == "0a") { s = 1 }
             else { s = 2 }
         } else if (s == 4) {
             s = 2
@@ -79,7 +76,7 @@ nsv_validate() {
     }
     END {
         if (first_cols < 0) first_cols = 0
-        print first_cols, rows, empty
+        print first_cols, rows
     }'
 }
 
@@ -96,10 +93,9 @@ for f in "$dir"/*.nsv; do
     result=$(nsv_validate "$f")
     ncols=$(echo "$result" | awk '{print $1}')
     nrows=$(echo "$result" | awk '{print $2}')
-    has_empty=$(echo "$result" | awk '{print $3}')
 
-    # Skip zero-column, multi-row, or empty-cell fixtures.
-    if [ "$ncols" -eq 0 ] || [ "$nrows" -gt 1 ] || [ "$has_empty" -eq 1 ]; then
+    # Skip zero-column or multi-row fixtures.
+    if [ "$ncols" -eq 0 ] || [ "$nrows" -gt 1 ]; then
         skipped=$((skipped + 1))
         continue
     fi
