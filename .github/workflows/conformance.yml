@@ -94,13 +94,9 @@ jobs:
 
   duckdb:
     runs-on: ubuntu-latest
-    env:
-      # DuckDB version nsv-duckdb builds the extension against; drives both the
-      # artifact and the CLI (extensions only load in their build version).
-      DUCKDB_VERSION: v1.5.1
     steps:
       - uses: actions/checkout@v4
-      - name: Download latest master extension build from nsv-duckdb
+      - name: Download nsv extension built on nsv-duckdb master
         uses: dawidd6/action-download-artifact@v6
         with:
           github_token: ${{ secrets.NSV_DUCKDB_CI_TOKEN }}
@@ -108,20 +104,21 @@ jobs:
           workflow: MainDistributionPipeline.yml
           branch: master
           workflow_conclusion: success
-          name: nsv-${{ env.DUCKDB_VERSION }}-extension-linux_amd64
+          name: nsv-v.*-extension-linux_amd64
+          name_is_regexp: true
           path: /tmp/ext
-      - name: Install DuckDB ${{ env.DUCKDB_VERSION }}
+      - name: Resolve DuckDB version + extension from the artifact name
+        run: |
+          art="$(find /tmp/ext -maxdepth 1 -type d -name 'nsv-v*-extension-linux_amd64' | head -1)"
+          echo "DUCKDB_VERSION=$(basename "$art" | sed -E 's/^nsv-([^-]+)-extension-.*/\1/')" >> "$GITHUB_ENV"
+          ext="$(find "$art" -name 'nsv.duckdb_extension*' | head -1)"
+          case "$ext" in *.gz) gunzip -f "$ext"; ext="${ext%.gz}" ;; esac
+          echo "NSV_EXT=$ext" >> "$GITHUB_ENV"
+      - name: Install the matching DuckDB
         run: |
           curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
           unzip -o /tmp/duckdb.zip -d /tmp/duckdb
           chmod +x /tmp/duckdb/duckdb
-      - name: Locate extension binary
-        run: |
-          ext="$(find /tmp/ext -name 'nsv.duckdb_extension*' | head -1)"
-          case "$ext" in
-            *.gz) gunzip -f "$ext"; ext="${ext%.gz}" ;;
-          esac
-          echo "NSV_EXT=$ext" >> "$GITHUB_ENV"
       - name: Conformance
         run: scripts/conformance.sh
         env:
