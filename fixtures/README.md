@@ -9,9 +9,10 @@ stored as `.nsv` (0 bytes). 1093 files total.
 
 ## Champernowne fixture (`fixtures/champernowne.nsv`)
 
-Concatenation of all enum sequences (lengths 0 through 14) in
-lexicographic order of their base-3 digit representation into a single
-~97 MB file. Purpose: performance testing and fuzzing.
+Concatenation of all byte sequences over the same 3-symbol alphabet for
+lengths 0 through 14, in shortlex order of their base-3 digit
+representation (by length, then lexicographically within each length),
+into a single ~97 MB file. Purpose: performance testing and fuzzing.
 
 ## Fixed-point Champernowne fixture (`fixtures/champernowne-fixed.nsv`)
 

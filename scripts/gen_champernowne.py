@@ -7,8 +7,8 @@
 
 Produces a single file containing the concatenation of every byte sequence
 over a 3-symbol alphabet (LF, backslash, 'n') for lengths 0 through
---max-length, in lexicographic order of their base-3 digit representation
-(0=LF, 1='\\', 2='n').
+--max-length, in shortlex order of their base-3 digit representation
+(by length, then lexicographically; 0=LF, 1='\\', 2='n').
 
 Same iteration order as gen_enum.py, but all bytes go into one file.
 """
