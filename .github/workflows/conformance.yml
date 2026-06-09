@@ -20,6 +20,14 @@ jobs:
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: python3 .github/roundtrip/roundtrip.py
+      - name: Coercion manifest
+        run: scripts/coercion.sh > /tmp/coercion-manifest.tsv
+        env:
+          NSV_COERCE: python3 .github/coercion/coercion.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coercion-python
+          path: /tmp/coercion-manifest.tsv
 
   java:
     runs-on: ubuntu-latest
@@ -29,15 +37,23 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-      - name: Build roundtrip helper
+      - name: Build roundtrip + coercion helpers
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-java.git /tmp/nsv-java
-          cp .github/roundtrip/Roundtrip.java /tmp/nsv-java/src/main/java/org/nsvformat/
+          cp .github/roundtrip/Roundtrip.java .github/coercion/Coercion.java /tmp/nsv-java/src/main/java/org/nsvformat/
           cd /tmp/nsv-java && mvn -q compile
       - name: Conformance
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: java -cp /tmp/nsv-java/target/classes org.nsvformat.Roundtrip
+      - name: Coercion manifest
+        run: scripts/coercion.sh > /tmp/coercion-manifest.tsv
+        env:
+          NSV_COERCE: java -cp /tmp/nsv-java/target/classes org.nsvformat.Coercion
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coercion-java
+          path: /tmp/coercion-manifest.tsv
 
   scala:
     runs-on: ubuntu-latest
@@ -46,19 +62,31 @@ jobs:
       - uses: coursier/setup-action@v1
         with:
           apps: sbt
-      - name: Build roundtrip helper
+      - name: Build roundtrip + coercion helpers
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-scala.git /tmp/nsv-scala
-          cp .github/roundtrip/Roundtrip.scala /tmp/nsv-scala/src/
+          cp .github/roundtrip/Roundtrip.scala .github/coercion/Coercion.scala /tmp/nsv-scala/src/
           cd /tmp/nsv-scala && sbt -batch compile
           classes=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
           scala_cp=$(cs fetch --classpath org.scala-lang:scala3-library_3:3.3.7)
-          printf '#!/bin/sh\nexec java -cp "%s:%s" org.nsvformat.Roundtrip "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-roundtrip
-          chmod +x /tmp/nsv-roundtrip
+          # -Xmx12g: nsv-scala's batch decode materializes per-char tuples
+          # (zipWithIndex), so the ~90 MB champernowne fixtures need far
+          # more than the default heap.
+          printf '#!/bin/sh\nexec java -Xmx12g -cp "%s:%s" org.nsvformat.Roundtrip "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-roundtrip
+          printf '#!/bin/sh\nexec java -Xmx12g -cp "%s:%s" org.nsvformat.Coercion "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-coercion
+          chmod +x /tmp/nsv-roundtrip /tmp/nsv-coercion
       - name: Conformance
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: /tmp/nsv-roundtrip
+      - name: Coercion manifest
+        run: scripts/coercion.sh > /tmp/coercion-manifest.tsv
+        env:
+          NSV_COERCE: /tmp/nsv-coercion
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coercion-scala
+          path: /tmp/coercion-manifest.tsv
 
   js:
     runs-on: ubuntu-latest
@@ -73,22 +101,38 @@ jobs:
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: node .github/roundtrip/roundtrip.js
+      - name: Coercion manifest
+        run: scripts/coercion.sh > /tmp/coercion-manifest.tsv
+        env:
+          NSV_COERCE: node .github/coercion/coercion.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coercion-js
+          path: /tmp/coercion-manifest.tsv
 
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build roundtrip binary
+      - name: Build roundtrip + coercion binaries
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-rust.git /tmp/nsv-rust
           mkdir -p /tmp/nsv-rust/examples
-          cp .github/roundtrip/roundtrip.rs /tmp/nsv-rust/examples/
-          cd /tmp/nsv-rust && cargo build --release --example roundtrip
+          cp .github/roundtrip/roundtrip.rs .github/coercion/coercion.rs /tmp/nsv-rust/examples/
+          cd /tmp/nsv-rust && cargo build --release --example roundtrip --example coercion
       - name: Conformance
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: /tmp/nsv-rust/target/release/examples/roundtrip
+      - name: Coercion manifest
+        run: scripts/coercion.sh > /tmp/coercion-manifest.tsv
+        env:
+          NSV_COERCE: /tmp/nsv-rust/target/release/examples/coercion
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coercion-rust
+          path: /tmp/coercion-manifest.tsv
 
   duckdb:
     runs-on: ubuntu-latest
@@ -121,3 +165,67 @@ jobs:
           DUCKDB: /tmp/duckdb/duckdb
           NSV_EXT: ${{ env.NSV_EXT }}
           NSV_ROUNDTRIP_DIR: sh .github/roundtrip/roundtrip_duckdb.sh
+
+  # Cross-implementation consensus over the batch (non-resumable) decoders:
+  # encode(decode(raw)) must be byte-identical across every implementation.
+  # The consensus is the oracle — no single implementation is trusted.
+  # (Each per-impl job already asserts its output is a fixed point and that
+  # champernowne coercion reproduces the committed champernowne-fixed.nsv.)
+  coercion-compare:
+    needs: [python, java, scala, js, rust]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coercion-*
+          path: manifests
+      - name: Batch coercion consensus
+        run: |
+          status=0
+          ref=""
+          for m in manifests/coercion-*/coercion-manifest.tsv; do
+            impl="${m#manifests/coercion-}"; impl="${impl%%/*}"
+            grep '^batch' "$m" > "/tmp/${impl}.batch"
+            if [ -z "$ref" ]; then ref="$impl"; continue; fi
+            if diff "/tmp/${ref}.batch" "/tmp/${impl}.batch" > /dev/null; then
+              echo "$impl: identical to $ref"
+            else
+              echo "DIVERGENCE: $impl vs $ref"
+              diff "/tmp/${ref}.batch" "/tmp/${impl}.batch" | head -40
+              status=1
+            fi
+          done
+          exit $status
+
+  # Same consensus over the resumable/streaming readers, on the enum corpus
+  # (which includes unterminated inputs the roundtrip suite never feeds).
+  # KNOWN RED until the resumable-reader EOF semantics are aligned: today
+  # Python and JS readers emit the incomplete trailing row where Java/Rust/
+  # Scala buffer it, and the JS streaming Reader corrupts empty rows.
+  # This job exists precisely to keep that divergence visible.
+  coercion-compare-stream:
+    needs: [python, java, scala, js, rust]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coercion-*
+          path: manifests
+      - name: Stream coercion consensus
+        run: |
+          status=0
+          ref=""
+          for m in manifests/coercion-*/coercion-manifest.tsv; do
+            impl="${m#manifests/coercion-}"; impl="${impl%%/*}"
+            grep '^stream' "$m" > "/tmp/${impl}.stream"
+            if [ -z "$ref" ]; then ref="$impl"; continue; fi
+            if diff "/tmp/${ref}.stream" "/tmp/${impl}.stream" > /dev/null; then
+              echo "$impl: identical to $ref"
+            else
+              n=$(diff "/tmp/${ref}.stream" "/tmp/${impl}.stream" | grep -c '^<' || true)
+              echo "DIVERGENCE: $impl vs $ref ($n files)"
+              diff "/tmp/${ref}.stream" "/tmp/${impl}.stream" | head -20
+              status=1
+            fi
+          done
+          exit $status
