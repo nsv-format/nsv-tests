@@ -5,7 +5,7 @@
 All byte sequences over the 3-symbol alphabet `{LF, \, n}` for lengths 0
 through 6. Each file is named by its base-3 digit string (0=LF, 1=`\`,
 2=`n`) and contains the corresponding raw bytes. The empty sequence is
-stored as `.nsv` (0 bytes). 1094 files total.
+stored as `.nsv` (0 bytes). 1093 files total.
 
 ## Champernowne fixture (`fixtures/champernowne.nsv`)
 
