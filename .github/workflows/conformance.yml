@@ -95,6 +95,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download nsv extension built on nsv-duckdb master
+        id: download
+        continue-on-error: true
         uses: dawidd6/action-download-artifact@v6
         with:
           github_token: ${{ secrets.NSV_DUCKDB_CI_TOKEN }}
@@ -105,17 +107,23 @@ jobs:
           name: nsv-v.*-extension-linux_amd64
           name_is_regexp: true
           path: /tmp/ext
+      - name: Skip notice
+        if: steps.download.outcome != 'success'
+        run: echo "::notice::No nsv-duckdb artifact available — skipping conformance"
       - name: Resolve DuckDB version + extension from the artifact name
+        if: steps.download.outcome == 'success'
         run: |
           dir=$(echo /tmp/ext/nsv-v*-extension-linux_amd64)
           echo "NSV_EXT=$dir/nsv.duckdb_extension" >> "$GITHUB_ENV"
           echo "DUCKDB_VERSION=$(basename "$dir" | sed -E 's/^nsv-([^-]+)-extension-.*/\1/')" >> "$GITHUB_ENV"
       - name: Install the matching DuckDB
+        if: steps.download.outcome == 'success'
         run: |
           curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" -o /tmp/duckdb.zip
           unzip -o /tmp/duckdb.zip -d /tmp/duckdb
           chmod +x /tmp/duckdb/duckdb
       - name: Conformance
+        if: steps.download.outcome == 'success'
         run: scripts/conformance.sh
         env:
           DUCKDB: /tmp/duckdb/duckdb
