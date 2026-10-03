@@ -93,7 +93,7 @@ def path_to_seqseq(name: str) -> list[list[str]]:
     return rows
 
 
-def _apply_semantic(state: int, next_state: int | None, path_char: str,
+def apply_semantic(state: int, next_state: int | None, path_char: str,
                     rows: list[list[str]], row: list[str],
                     cell: list[str]) -> tuple[list[list[str]], list[str], list[str]]:
     """Advance the decoded-seqseq state for one transition."""
@@ -147,7 +147,7 @@ def generate(max_transitions: int, out_dir: Path) -> int:
             new_acc = acc + emitted if emitted else acc
             new_used = used + 1
 
-            new_rows, new_row, new_cell = _apply_semantic(
+            new_rows, new_row, new_cell = apply_semantic(
                 state, next_state, path_char, rows, row, cell)
 
             if next_state is None:
