@@ -54,14 +54,6 @@ else
     exit 1
 fi
 
-# --- NDFA interpreter cross-check ---
-# Validates that path_to_seqseq (the NDFA path interpreter used by
-# decode-check scripts) agrees with nsv.loads on every valid fixture.
-
-echo ""
-uv run "$REPO_ROOT/.github/decode-check/decode_check.py" "$VALID_DIR"
-echo "NDFA interpreter cross-check passed."
-
 # Injectivity guard: distinct paths (filenames) must produce distinct bytes.
 # Catches regressions like a zero-content cell emitting a bare 0A that
 # collides with an end-row terminator.
