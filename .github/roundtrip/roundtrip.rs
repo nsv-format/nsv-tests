@@ -26,32 +26,32 @@ fn path_to_seqseq(name: &str) -> Vec<Vec<String>> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let (mode, dir) = if args.len() > 2 && (args[1] == "roundtrip" || args[1] == "decode-check") {
-        (args[1].as_str(), &args[2])
+    let (mode, dir_idx) = if args.len() > 2 && args[1] == "decode-check" {
+        ("decode-check", 2)
     } else {
-        ("roundtrip", &args[1])
+        ("roundtrip", 1)
     };
-
+    let dir = &args[dir_idx];
     let mut entries: Vec<_> = fs::read_dir(dir).unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().ends_with(".nsv"))
         .collect();
     entries.sort_by_key(|e| e.file_name());
-
     let mut passed = 0u32;
     let mut fails = Vec::new();
-
     for entry in &entries {
+        let path = entry.path();
+        let orig = fs::read_to_string(&path).unwrap();
         let name = entry.file_name().to_string_lossy().to_string();
-        let orig = fs::read_to_string(entry.path()).unwrap();
-        let ok = match mode {
-            "decode-check" => nsv::decode(&orig) == path_to_seqseq(&name),
-            _ => nsv::encode(&nsv::decode(&orig)) == orig,
+        let ok = if mode == "decode-check" {
+            nsv::decode(&orig) == path_to_seqseq(&name)
+        } else {
+            nsv::encode(&nsv::decode(&orig)) == orig
         };
         if ok { passed += 1; } else { fails.push(name); }
     }
-
-    println!("  {passed}/{} passed", entries.len());
+    let total = entries.len();
+    println!("  {passed}/{total} passed");
     for f in &fails { println!("  {f}"); }
     if !fails.is_empty() { process::exit(1); }
 }

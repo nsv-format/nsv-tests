@@ -26,22 +26,16 @@ def path_to_seqseq(name):
     return rows
 
 
-args = sys.argv[1:]
-mode = 'roundtrip'
-if args and args[0] in ('roundtrip', 'decode-check'):
-    mode = args.pop(0)
-
-d = args[0]
+mode = sys.argv[1] if len(sys.argv) > 2 and sys.argv[1] == 'decode-check' else None
+d = sys.argv[2] if mode else sys.argv[1]
 entries = sorted(e for e in os.listdir(d) if e.endswith('.nsv'))
-
-if mode == 'roundtrip':
+if mode == 'decode-check':
+    fails = [n for n in entries
+             if nsv.loads(open(os.path.join(d, n)).read()) != path_to_seqseq(n)]
+else:
     fails = [n for n in entries
              if nsv.dumps(nsv.loads(open(os.path.join(d, n)).read()))
                 != open(os.path.join(d, n)).read()]
-elif mode == 'decode-check':
-    fails = [n for n in entries
-             if nsv.loads(open(os.path.join(d, n)).read()) != path_to_seqseq(n)]
-
 passed = len(entries) - len(fails)
 print(f'  {passed}/{len(entries)} passed')
 for f in fails: print(f'  {f}')

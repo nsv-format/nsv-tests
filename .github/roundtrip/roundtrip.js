@@ -34,20 +34,16 @@ function seqseqEqual(a, b) {
     return true;
 }
 
-const args = process.argv.slice(2);
-let mode = 'roundtrip';
-if (args[0] === 'roundtrip' || args[0] === 'decode-check') { mode = args.shift(); }
-const dir = args[0];
+const mode = process.argv[2] === 'decode-check' ? 'decode-check' : null;
+const dir = mode ? process.argv[3] : process.argv[2];
 const files = fs.readdirSync(dir).filter(f => f.endsWith('.nsv')).sort();
 let passed = 0; const fails = [];
 for (const f of files) {
-    const orig = fs.readFileSync(path.join(dir, f), 'utf8');
-    let ok;
+    const p = path.join(dir, f), orig = fs.readFileSync(p, 'utf8');
     if (mode === 'decode-check')
-        ok = seqseqEqual(n.parse(orig), pathToSeqseq(f));
+        seqseqEqual(n.parse(orig), pathToSeqseq(f)) ? passed++ : fails.push(f);
     else
-        ok = n.stringify(n.parse(orig)) === orig;
-    ok ? passed++ : fails.push(f);
+        n.stringify(n.parse(orig)) === orig ? passed++ : fails.push(f);
 }
 console.log(`  ${passed}/${passed + fails.length} passed`);
 fails.forEach(f => console.log(`  ${f}`));

@@ -42,12 +42,8 @@ public class Roundtrip {
     }
 
     public static void main(String[] args) throws Exception {
-        String mode = "roundtrip";
-        int dirIdx = 0;
-        if (args.length > 1 && (args[0].equals("roundtrip") || args[0].equals("decode-check"))) {
-            mode = args[0]; dirIdx = 1;
-        }
-        Path dir = Paths.get(args[dirIdx]);
+        String mode = args.length > 1 && args[0].equals("decode-check") ? "decode-check" : null;
+        Path dir = Paths.get(mode != null ? args[1] : args[0]);
         int passed = 0, failed = 0;
         List<String> fails = new ArrayList<>();
         List<Path> files = Files.list(dir)
@@ -55,15 +51,14 @@ public class Roundtrip {
             .sorted()
             .toList();
         for (Path p : files) {
-            String name = p.getFileName().toString();
             String orig = Files.readString(p);
             boolean ok;
-            if (mode.equals("decode-check"))
-                ok = Nsv.decode(orig).equals(pathToSeqseq(name));
+            if ("decode-check".equals(mode))
+                ok = Nsv.decode(orig).equals(pathToSeqseq(p.getFileName().toString()));
             else
                 ok = Nsv.encode(Nsv.decode(orig)).equals(orig);
             if (ok) passed++;
-            else { failed++; fails.add(name); }
+            else { failed++; fails.add(p.getFileName().toString()); }
         }
         System.out.printf("  %d/%d passed%n", passed, passed + failed);
         for (String f : fails) System.out.println("  " + f);
