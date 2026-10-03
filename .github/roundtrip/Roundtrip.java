@@ -6,7 +6,7 @@ import java.util.*;
 public class Roundtrip {
     static List<List<String>> pathToSeqseq(String name) {
         String stem = name.endsWith(".nsv") ? name.substring(0, name.length() - 4) : name;
-        if (stem.isEmpty()) return List.of();
+        if (stem.isEmpty()) return Collections.emptyList();
         int state = 0;
         List<List<String>> rows = new ArrayList<>();
         List<String> row = new ArrayList<>();
@@ -14,30 +14,27 @@ public class Roundtrip {
         for (int i = 0; i < stem.length(); i++) {
             char ch = stem.charAt(i);
             switch (state) {
-                case 0 -> { row = new ArrayList<>(); state = 1; }
-                case 1 -> {
-                    switch (ch) {
-                        case '0' -> { rows.add(row); state = 0; }
-                        case '1' -> row.add("");
-                        case '2' -> { cell.setLength(0); state = 2; }
-                    }
-                }
-                case 2 -> {
-                    switch (ch) {
-                        case 'a' -> cell.append('a');
-                        case 'b' -> cell.append('\\');
-                        case 'n' -> cell.append('\n');
-                    }
+                case 0:
+                    row = new ArrayList<>();
+                    state = 1;
+                    break;
+                case 1:
+                    if (ch == '0') { rows.add(row); state = 0; }
+                    else if (ch == '1') { row.add(""); }
+                    else if (ch == '2') { cell.setLength(0); state = 2; }
+                    break;
+                case 2:
+                    if (ch == 'a') cell.append('a');
+                    else if (ch == 'b') cell.append('\\');
+                    else if (ch == 'n') cell.append('\n');
                     state = 3;
-                }
-                case 3 -> {
+                    break;
+                case 3:
                     if (ch == '1') { row.add(cell.toString()); cell.setLength(0); state = 1; }
-                    else switch (ch) {
-                        case 'a' -> cell.append('a');
-                        case 'b' -> cell.append('\\');
-                        case 'n' -> cell.append('\n');
-                    }
-                }
+                    else if (ch == 'a') cell.append('a');
+                    else if (ch == 'b') cell.append('\\');
+                    else if (ch == 'n') cell.append('\n');
+                    break;
             }
         }
         if (state == 1) rows.add(row);
