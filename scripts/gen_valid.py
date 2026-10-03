@@ -140,7 +140,8 @@ def generate(max_transitions: int, out_dir: Path) -> int:
         if used >= max_transitions:
             continue
 
-        children = []
+        children: list[tuple[int, bytes, int, str,
+                              list[list[str]], list[str], list[str]]] = []
 
         for next_state, emitted, path_char in TRANSITIONS[state]:
             new_acc = acc + emitted if emitted else acc
@@ -150,6 +151,8 @@ def generate(max_transitions: int, out_dir: Path) -> int:
                 state, next_state, path_char, rows, row, cell)
 
             if next_state is None:
+                # Accept transition — write file and cross-check.
+                # Strip the trailing "0" (the S0 we accept from is implicit).
                 stem = path.removesuffix("0")
                 (out_dir / (stem + ".nsv")).write_bytes(new_acc)
                 count += 1
@@ -164,6 +167,7 @@ def generate(max_transitions: int, out_dir: Path) -> int:
                                  path + path_char,
                                  new_rows, new_row, new_cell))
 
+        # Push children in reverse order so first child is popped first (DFS)
         for child in reversed(children):
             stack.append(child)
 
