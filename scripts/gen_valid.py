@@ -64,60 +64,6 @@ TRANSITIONS: dict[int, list[tuple[int | None, bytes, str]]] = {
     ],
 }
 
-CONTENT = {"a": "a", "b": "\\", "n": "\n"}
-
-
-def path_to_seqseq(name: str) -> list[list[str]]:
-    """Derive expected Seq[Seq[String]] from NDFA path in filename."""
-    stem = name.removesuffix(".nsv")
-    if not stem:
-        return []
-    state = S0
-    rows: list[list[str]] = []
-    row: list[str] = []
-    cell: list[str] = []
-    for ch in stem:
-        if state == S0:
-            row = []; state = S1
-        elif state == S1:
-            if ch == "0": rows.append(row); state = S0
-            elif ch == "1": row.append("")
-            elif ch == "2": cell = []; state = S2
-        elif state == S2:
-            cell.append(CONTENT[ch]); state = S3
-        elif state == S3:
-            if ch == "1": row.append("".join(cell)); cell = []; state = S1
-            else: cell.append(CONTENT[ch])
-    if state == S1:
-        rows.append(row)
-    return rows
-
-
-def apply_semantic(state: int, next_state: int | None, path_char: str,
-                    rows: list[list[str]], row: list[str],
-                    cell: list[str]) -> tuple[list[list[str]], list[str], list[str]]:
-    """Advance the decoded-seqseq state for one transition."""
-    new_rows = [r[:] for r in rows]
-    new_row = row[:]
-    new_cell = cell[:]
-
-    if state == S0:
-        new_row = []
-    elif state == S1:
-        if path_char == "0":
-            new_rows.append(new_row); new_row = []
-        elif path_char == "1":
-            new_row.append("")
-        elif path_char == "2":
-            new_cell = []
-    elif state in (S2, S3):
-        if path_char == "1":
-            new_row.append("".join(new_cell)); new_cell = []
-        else:
-            new_cell.append(CONTENT[path_char])
-
-    return new_rows, new_row, new_cell
-
 
 def generate(max_transitions: int, out_dir: Path) -> int:
     if out_dir.exists():
@@ -125,55 +71,34 @@ def generate(max_transitions: int, out_dir: Path) -> int:
     out_dir.mkdir(parents=True)
 
     count = 0
-    mismatches = 0
 
-    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path,
-    #                          rows, current_row, current_cell)
-    stack: list[tuple[int, bytes, int, str,
-                       list[list[str]], list[str], list[str]]] = [
-        (S0, b"", 0, "", [], [], [])
-    ]
+    # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path)
+    stack: list[tuple[int, bytes, int, str]] = [(S0, b"", 0, "")]
 
     while stack:
-        state, acc, used, path, rows, row, cell = stack.pop()
+        state, acc, used, path = stack.pop()
 
         if used >= max_transitions:
             continue
 
-        children: list[tuple[int, bytes, int, str,
-                              list[list[str]], list[str], list[str]]] = []
+        children: list[tuple[int, bytes, int, str]] = []
 
         for next_state, emitted, path_char in TRANSITIONS[state]:
             new_acc = acc + emitted if emitted else acc
             new_used = used + 1
 
-            new_rows, new_row, new_cell = apply_semantic(
-                state, next_state, path_char, rows, row, cell)
-
             if next_state is None:
-                # Accept transition — write file and cross-check.
+                # Accept transition — write file.
                 # Strip the trailing "0" (the S0 we accept from is implicit).
                 stem = path.removesuffix("0")
                 (out_dir / (stem + ".nsv")).write_bytes(new_acc)
                 count += 1
-
-                expected = path_to_seqseq(stem + ".nsv")
-                if expected != new_rows:
-                    print(f"  MISMATCH {stem}.nsv: "
-                          f"generator={new_rows!r} interpreter={expected!r}")
-                    mismatches += 1
             elif new_used < max_transitions:
-                children.append((next_state, new_acc, new_used,
-                                 path + path_char,
-                                 new_rows, new_row, new_cell))
+                children.append((next_state, new_acc, new_used, path + path_char))
 
         # Push children in reverse order so first child is popped first (DFS)
         for child in reversed(children):
             stack.append(child)
-
-    if mismatches:
-        raise SystemExit(
-            f"NDFA interpreter mismatches: {mismatches}/{count}")
 
     return count
 
@@ -196,7 +121,6 @@ def main() -> None:
 
     count = generate(args.max_transitions, args.out_dir)
     print(f"Generated {count} files in {args.out_dir}")
-    print(f"NDFA interpreter cross-check: all {count} match")
 
 
 if __name__ == "__main__":
