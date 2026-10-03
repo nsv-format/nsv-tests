@@ -20,6 +20,7 @@ jobs:
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: python3 .github/roundtrip/roundtrip.py
+          NSV_DECODE_CHECK: python3 .github/decode-check/decode_check.py
 
   java:
     runs-on: ubuntu-latest
@@ -29,15 +30,17 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-      - name: Build roundtrip helper
+      - name: Build helpers
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-java.git /tmp/nsv-java
           cp .github/roundtrip/Roundtrip.java /tmp/nsv-java/src/main/java/org/nsvformat/
+          cp .github/decode-check/DecodeCheck.java /tmp/nsv-java/src/main/java/org/nsvformat/
           cd /tmp/nsv-java && mvn -q compile
       - name: Conformance
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: java -cp /tmp/nsv-java/target/classes org.nsvformat.Roundtrip
+          NSV_DECODE_CHECK: java -cp /tmp/nsv-java/target/classes org.nsvformat.DecodeCheck
 
   scala:
     runs-on: ubuntu-latest
@@ -46,19 +49,22 @@ jobs:
       - uses: coursier/setup-action@v1
         with:
           apps: sbt
-      - name: Build roundtrip helper
+      - name: Build helpers
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-scala.git /tmp/nsv-scala
           cp .github/roundtrip/Roundtrip.scala /tmp/nsv-scala/src/
+          cp .github/decode-check/DecodeCheck.scala /tmp/nsv-scala/src/
           cd /tmp/nsv-scala && sbt -batch compile
           classes=$(find /tmp/nsv-scala/target -path '*/scala-*/classes' | head -1)
           scala_cp=$(cs fetch --classpath org.scala-lang:scala3-library_3:3.3.7)
           printf '#!/bin/sh\nexec java -cp "%s:%s" org.nsvformat.Roundtrip "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-roundtrip
-          chmod +x /tmp/nsv-roundtrip
+          printf '#!/bin/sh\nexec java -cp "%s:%s" org.nsvformat.DecodeCheck "$@"\n' "$classes" "$scala_cp" > /tmp/nsv-decode-check
+          chmod +x /tmp/nsv-roundtrip /tmp/nsv-decode-check
       - name: Conformance
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: /tmp/nsv-roundtrip
+          NSV_DECODE_CHECK: /tmp/nsv-decode-check
 
   js:
     runs-on: ubuntu-latest
@@ -73,22 +79,25 @@ jobs:
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: node .github/roundtrip/roundtrip.js
+          NSV_DECODE_CHECK: node .github/decode-check/decode_check.js
 
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build roundtrip binary
+      - name: Build helpers
         run: |
           git clone --depth 1 https://github.com/nsv-format/nsv-rust.git /tmp/nsv-rust
           mkdir -p /tmp/nsv-rust/examples
           cp .github/roundtrip/roundtrip.rs /tmp/nsv-rust/examples/
-          cd /tmp/nsv-rust && cargo build --release --example roundtrip
+          cp .github/decode-check/decode_check.rs /tmp/nsv-rust/examples/
+          cd /tmp/nsv-rust && cargo build --release --example roundtrip --example decode_check
       - name: Conformance
         run: scripts/conformance.sh
         env:
           NSV_ROUNDTRIP_DIR: /tmp/nsv-rust/target/release/examples/roundtrip
+          NSV_DECODE_CHECK: /tmp/nsv-rust/target/release/examples/decode_check
 
   duckdb:
     runs-on: ubuntu-latest
@@ -129,4 +138,3 @@ jobs:
           DUCKDB: /tmp/duckdb/duckdb
           NSV_EXT: ${{ env.NSV_EXT }}
           NSV_ROUNDTRIP_DIR: sh .github/roundtrip/roundtrip_duckdb.sh
-          NSV_SKIP_DECODE_CHECK: true
