@@ -129,3 +129,4 @@ jobs:
           DUCKDB: /tmp/duckdb/duckdb
           NSV_EXT: ${{ env.NSV_EXT }}
           NSV_ROUNDTRIP_DIR: sh .github/roundtrip/roundtrip_duckdb.sh
+          NSV_SKIP_DECODE_CHECK: true

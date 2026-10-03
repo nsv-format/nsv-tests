@@ -10,8 +10,9 @@
 # exits non-zero if any fixture fails.
 #
 # Environment variables:
-#   NSV_ROUNDTRIP_DIR  Roundtrip command (takes directory argument).
-#   NSV_STRESS         Set to "true" to include the Champernowne stress test.
+#   NSV_ROUNDTRIP_DIR       Roundtrip command (takes directory argument).
+#   NSV_STRESS              Set to "true" to include the Champernowne stress test.
+#   NSV_SKIP_DECODE_CHECK   Set to "true" to skip the decode-check pass.
 
 set -e
 
@@ -22,6 +23,12 @@ stress="${NSV_STRESS:-false}"
 
 echo "--- valid fixtures (roundtrip) ---"
 eval "$cmd" "$SELF_DIR/fixtures/valid"
+
+if [ "${NSV_SKIP_DECODE_CHECK:-}" != "true" ]; then
+    echo ""
+    echo "--- valid fixtures (decode-check) ---"
+    eval "$cmd" decode-check "$SELF_DIR/fixtures/valid"
+fi
 
 if [ -f "$SELF_DIR/fixtures/champernowne-fixed.nsv" ]; then
     tmpdir_fixed="$(mktemp -d)"
