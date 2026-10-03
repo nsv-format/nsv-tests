@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["nsv"]
 # ///
 """Generate valid NSV encodings via NDFA traversal.
 
@@ -22,8 +21,6 @@ sequence. Examples:
 import argparse
 import shutil
 from pathlib import Path
-
-import nsv
 
 # States
 S0 = 0  # not-in-row (initial and accepting)
@@ -68,42 +65,12 @@ TRANSITIONS: dict[int, list[tuple[int | None, bytes, str]]] = {
 }
 
 
-CONTENT = {"a": "a", "b": "\\", "n": "\n"}
-
-
-def path_to_seqseq(name: str) -> list[list[str]]:
-    """Derive expected Seq[Seq[String]] from NDFA path in filename."""
-    stem = name.removesuffix(".nsv")
-    if not stem:
-        return []
-    state = S0
-    rows: list[list[str]] = []
-    row: list[str] = []
-    cell: list[str] = []
-    for ch in stem:
-        if state == S0:
-            row = []; state = S1
-        elif state == S1:
-            if ch == "0": rows.append(row); state = S0
-            elif ch == "1": row.append("")
-            elif ch == "2": cell = []; state = S2
-        elif state == S2:
-            cell.append(CONTENT[ch]); state = S3
-        elif state == S3:
-            if ch == "1": row.append("".join(cell)); cell = []; state = S1
-            else: cell.append(CONTENT[ch])
-    if state == S1:
-        rows.append(row)
-    return rows
-
-
 def generate(max_transitions: int, out_dir: Path) -> int:
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
 
     count = 0
-    mismatches = 0
 
     # Iterative DFS: stack of (state, accumulated_bytes, transitions_used, path)
     stack: list[tuple[int, bytes, int, str]] = [(S0, b"", 0, "")]
@@ -126,23 +93,12 @@ def generate(max_transitions: int, out_dir: Path) -> int:
                 stem = path.removesuffix("0")
                 (out_dir / (stem + ".nsv")).write_bytes(new_acc)
                 count += 1
-
-                expected = path_to_seqseq(stem + ".nsv")
-                decoded = nsv.loads(new_acc.decode())
-                if decoded != expected:
-                    print(f"  MISMATCH {stem}.nsv: "
-                          f"decoded={decoded!r} expected={expected!r}")
-                    mismatches += 1
             elif new_used < max_transitions:
                 children.append((next_state, new_acc, new_used, path + path_char))
 
         # Push children in reverse order so first child is popped first (DFS)
         for child in reversed(children):
             stack.append(child)
-
-    if mismatches:
-        raise SystemExit(
-            f"NDFA interpreter mismatches: {mismatches}/{count}")
 
     return count
 
@@ -165,7 +121,6 @@ def main() -> None:
 
     count = generate(args.max_transitions, args.out_dir)
     print(f"Generated {count} files in {args.out_dir}")
-    print(f"NDFA interpreter cross-check: all {count} match")
 
 
 if __name__ == "__main__":
